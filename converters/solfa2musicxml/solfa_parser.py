@@ -341,7 +341,7 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
         return None, beat_str, None
 
     # Consume octave modifiers (they're part of the modulation target,
-    # e.g. s, means "sol octave down" — pitch class is the same but
+    # e.g. s, means "sol octave down" - pitch class is the same but
     # we consume to avoid leaving a dangling comma)
     pos = len(matched_right)
     while pos < len(right_stripped) and right_stripped[pos] in (spec["octave"]["up_char"], spec["octave"]["down_char"]):
@@ -367,7 +367,7 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
         if not mstr:
             continue
 
-        # Soft barline is purely visual — treat as beat separator
+        # Soft barline is purely visual - treat as beat separator
         mstr = mstr.replace(spec["rhythm"]["soft_barline"]["char"], spec["rhythm"]["beat_separator"])
         beats_raw = mstr.split(spec["rhythm"]["beat_separator"])
         beats = []
@@ -402,7 +402,7 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
                     and not beat_events[0].dynamic
                     and not beat_events[0].fermata):
                 measure_navs.append(beat_events[0].navigation)
-                # Drop this beat entirely — it's not real music
+                # Drop this beat entirely - it's not real music
                 continue
             # Extract nav from note events: |(DC)f|
             for evt in beat_events:

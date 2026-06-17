@@ -14,7 +14,7 @@ class TonicSolfaParser:
         """Parse the complete tonic solfa text"""
         lines = text.strip().split('\n')
 
-        # Extract [notes] section — everything from the marker to EOF
+        # Extract [notes] section - everything from the marker to EOF
         marker = spec["notes_section"]["marker"]
         for i, line in enumerate(lines):
             if line.strip() == marker:

@@ -30,7 +30,7 @@ def solfa_to_pitch(evt: NoteEvent, current_key: str, base_octave: int) -> pitch.
             idx = degree_map[evt.semitone]
             if idx < len(scale_pitches):
                 p.name = scale_pitches[idx]
-                # music21 may shift octave after name change — fix it
+                # music21 may shift octave after name change - fix it
                 while abs(p.midi - midi_val) > 6:
                     if p.midi > midi_val:
                         p.octave -= 1

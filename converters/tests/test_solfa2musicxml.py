@@ -49,7 +49,7 @@ def test_parse_header_unknown_prop_ignored():
 def test_parse_header_stops_at_non_header_line():
     lines = [":title: Song", "This is body text", ":key: G"]
     props, remaining = parse_header(lines)
-    # key G appears after body text — should not be parsed as header
+    # key G appears after body text - should not be parsed as header
     assert "key" not in props or props.get("key") != "G"
     assert any("body text" in l for l in remaining)
 
@@ -293,7 +293,7 @@ def test_parse_voice_line_nav_only_beat_dropped():
 
 
 def test_parse_voice_line_multiple_navs_same_measure():
-    # DC and CODA in the same measure — both must be preserved
+    # DC and CODA in the same measure - both must be preserved
     _, measures = parse_voice_line("| (DC)d : - ! - : (CODA)l |")
     assert measures[0]["navigation"] == ["DC", "CODA"]
 

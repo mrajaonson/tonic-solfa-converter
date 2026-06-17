@@ -168,7 +168,7 @@ class TonicSolfaPDFRenderer:
             if self.song.copyright:
                 self.c.drawCentredString(self.page_width / 2, footer_y - copyright_font_size - 1, self.song.copyright)
 
-        # Generation date (first page only, only if :gendate: flag is set) — centered, below copyright
+        # Generation date (first page only, only if :gendate: flag is set) - centered, below copyright
         if self.song.gendate and self.current_page == 1:
             self.c.setFont("Helvetica", copyright_font_size)
             date_text = f"Generated on {datetime.now().strftime('%Y-%m-%d')}"
@@ -184,7 +184,7 @@ class TonicSolfaPDFRenderer:
         self.current_page += 1
         self.y_position = self.page_height - self.margin_top
 
-        # Draw title reminder at top of subsequent pages — slightly larger, light grey
+        # Draw title reminder at top of subsequent pages - slightly larger, light grey
         if self.song.title:
             title_reminder_size = self.small_font_size + 2
             self.c.setFont("Helvetica", title_reminder_size)
@@ -230,7 +230,7 @@ class TonicSolfaPDFRenderer:
         self.c.drawString(self.margin_left, self.y_position, prefix_text)
         x = self.margin_left + self.c.stringWidth(prefix_text, "Helvetica-Bold", self.header_font_size)
 
-        # Tempo marking — split rendering so ♩ uses the music symbol font
+        # Tempo marking - split rendering so ♩ uses the music symbol font
         if self.song.tempomarking or self.song.tempo:
             if self.song.tempomarking:
                 self.c.setFont("Helvetica-Bold", self.header_font_size)
@@ -435,7 +435,7 @@ class TonicSolfaPDFRenderer:
         # Check if we have all 4 standard SATB voices - if so, don't show labels
         show_voice_labels = not (set(voice_order) == set(spec["voices"]["default_order"]) and len(voice_order) == 4)
 
-        # Calculate column widths — use consistent measure width based on measures_per_line
+        # Calculate column widths - use consistent measure width based on measures_per_line
         voice_label_width = 8 * mm if show_voice_labels else 0
         available_width = self.content_width - voice_label_width
         measure_width = available_width / self.measures_per_line

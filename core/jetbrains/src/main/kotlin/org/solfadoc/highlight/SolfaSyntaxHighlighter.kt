@@ -12,13 +12,13 @@ import org.solfadoc.lexer.SolfaTokenTypes
 class SolfaSyntaxHighlighter : SyntaxHighlighterBase() {
 
     companion object {
-        // Tokens with theme fallbacks — intentionally inheriting from the active color scheme
+        // Tokens with theme fallbacks - intentionally inheriting from the active color scheme
         val COMMENT           = TextAttributesKey.createTextAttributesKey("SOLFA_COMMENT",        DefaultLanguageHighlighterColors.LINE_COMMENT)
         val HEADER_VALUE      = TextAttributesKey.createTextAttributesKey("SOLFA_HEADER_VALUE",   DefaultLanguageHighlighterColors.STRING)
         val LYRICS_TEXT       = TextAttributesKey.createTextAttributesKey("SOLFA_LYRICS_TEXT",    DefaultLanguageHighlighterColors.STRING)
         val BAD_CHAR          = TextAttributesKey.createTextAttributesKey("SOLFA_BAD_CHARACTER",  HighlighterColors.BAD_CHARACTER)
 
-        // All other tokens — no fallback; colors come exclusively from additionalTextAttributes XML.
+        // All other tokens - no fallback; colors come exclusively from additionalTextAttributes XML.
         // Without a fallback, IntelliJ renders unset tokens in the default editor text color,
         // which is the correct baseline for notes and plain text tokens.
         val HEADER_KEY        = TextAttributesKey.createTextAttributesKey("SOLFA_HEADER_KEY")

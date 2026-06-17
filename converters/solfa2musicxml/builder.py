@@ -217,7 +217,7 @@ def _apply_navigation(measure: stream.Measure, nav_str: str):
         if el.offset >= last_offset:
             last_offset = el.offset
     measure.insert(last_offset, te)
-    # DC, DCF, DCC → final barline (not a repeat barline — avoids music21
+    # DC, DCF, DCC → final barline (not a repeat barline - avoids music21
     # collapsing multiple backward repeats and dropping the first marker)
     if base in ("DC", "DCF", "DCC"):
         measure.rightBarline = bar.Barline("final")
@@ -309,7 +309,7 @@ def build_score(parsed: dict) -> stream.Score:
         timed = assign_durations(measures_raw, time_sig_str)
         timed = consolidate_holds(timed)
 
-        # Lyrics cursors — attach all lyrics, cursor advances on singable notes only
+        # Lyrics cursors - attach all lyrics, cursor advances on singable notes only
         voice_lyrics = lyrics_data.get(voice_label, {})
         sorted_verses = sorted(
             ((vid, syls) for vid, syls in voice_lyrics.items()),
@@ -388,7 +388,7 @@ def build_score(parsed: dict) -> stream.Score:
                         needs_tie_start = False
                     elif evt.is_hold:
                         if prev_note_obj is not None and first_event_in_measure:
-                            # Create tied continuation — note or chord
+                            # Create tied continuation - note or chord
                             if isinstance(prev_note_obj, chord.Chord):
                                 tied_n = _make_chord(list(prev_note_obj.pitches), ql)
                             else:

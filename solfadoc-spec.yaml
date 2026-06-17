@@ -1,5 +1,5 @@
 # =============================================================================
-# solfa-spec.yaml — Tonic Solfa Notation Specification
+# solfa-spec.yaml - Tonic Solfa Notation Specification
 # =============================================================================
 # Single source of truth for all notation constants.
 # Read at runtime by: Java (SolfaSpec), Python (solfa_spec.py), VSCode (js-yaml)
@@ -16,7 +16,7 @@ meta:
 
 
 # -----------------------------------------------------------------------------
-# DEFAULTS — file-level properties when not specified in the .solfa header
+# DEFAULTS - file-level properties when not specified in the .solfa header
 # -----------------------------------------------------------------------------
 defaults:
   title:         "Untitled"
@@ -37,11 +37,11 @@ defaults:
 
 
 # -----------------------------------------------------------------------------
-# HEADER — .solfa file header block parsing rules
+# HEADER - .solfa file header block parsing rules
 # -----------------------------------------------------------------------------
 header:
   # Format: :PROPNAME: value
-  # Unknown property names are silently skipped — not an error.
+  # Unknown property names are silently skipped - not an error.
   # A line whose first non-whitespace characters are '//' is a comment (entire line ignored).
   # '//' after any content on a line is literal text, NOT a comment.
   comment_char: "//"
@@ -49,15 +49,15 @@ header:
   prop_suffix: ":"
 
   # Property names by parse type
-  # 'author' and 'composer' are repeatable — multiple occurrences accumulate into a list.
+  # 'author' and 'composer' are repeatable - multiple occurrences accumulate into a list.
   string_props:  [title, author, composer, key, keyheader, meter, comment, date, transcription, copyright, tempomarking]
   int_props:     [tempo, octave]
   special_props: [timesig]   # parsed as "N/D" → two integers
-  flag_props:    [gendate]   # boolean flags — must be set to 'true' explicitly to activate
+  flag_props:    [gendate]   # boolean flags - must be set to 'true' explicitly to activate
 
 
 # -----------------------------------------------------------------------------
-# NOTES — solfa syllables and semitone offsets from "do"
+# NOTES - solfa syllables and semitone offsets from "do"
 # -----------------------------------------------------------------------------
 notes:
   # Natural (diatonic) notes of the major scale
@@ -70,8 +70,8 @@ notes:
     l:  9   # la
     t:  11  # ti
 
-  # Chromatic — ascending (sharps / raised)
-  # 'e' and 'i' suffixes are FULLY INTERCHANGEABLE — no preference.
+  # Chromatic - ascending (sharps / raised)
+  # 'e' and 'i' suffixes are FULLY INTERCHANGEABLE - no preference.
   chromatic_sharp:
     de: 1   # raised do  (alias: di)
     di: 1   # raised do  (alias: de)
@@ -84,15 +84,15 @@ notes:
     le: 10  # raised la  (alias: li)
     li: 10  # raised la  (alias: le)
 
-  # Chromatic — descending (flats / lowered)
+  # Chromatic - descending (flats / lowered)
   # IMPORTANT: 'la' is ALWAYS lowered-la (semitone 8).
   # It is NEVER the note 'l' followed by octave suffix 'a'.
   # 'sa' (6) is intentionally enharmonic with 'fe'/'fi' (6): lowered sol = raised fa.
   chromatic_flat:
     ra: 1   # lowered re
     ma: 3   # lowered mi
-    sa: 6   # lowered sol — enharmonic with fe/fi
-    la: 8   # lowered la  — ALWAYS a flat, never l + octave-a
+    sa: 6   # lowered sol - enharmonic with fe/fi
+    la: 8   # lowered la  - ALWAYS a flat, never l + octave-a
     ta: 10  # lowered ti
 
   # Chromatic scale reference (for validation and debugging)
@@ -107,11 +107,11 @@ notes:
 
 
 # -----------------------------------------------------------------------------
-# OCTAVE — modifiers applied after the solfa token
+# OCTAVE - modifiers applied after the solfa token
 # -----------------------------------------------------------------------------
 octave:
-  up_char:   "'"   # apostrophe — +1 octave per character
-  down_char: ","   # comma      — -1 octave per character (trailing only)
+  up_char:   "'"   # apostrophe - +1 octave per character
+  down_char: ","   # comma      - -1 octave per character (trailing only)
   default:   4     # base octave when no modifier present (middle-C octave)
 
   # Disambiguation rule:
@@ -124,7 +124,7 @@ octave:
 
 
 # -----------------------------------------------------------------------------
-# KEYS — valid key signatures
+# KEYS - valid key signatures
 # -----------------------------------------------------------------------------
 keys:
   # Major keys only (tonic solfa: do = tonic)
@@ -149,11 +149,11 @@ keys:
 
 
 # -----------------------------------------------------------------------------
-# RHYTHM — measure structure, separators, rests, holds
+# RHYTHM - measure structure, separators, rests, holds
 # -----------------------------------------------------------------------------
 rhythm:
-  barline:          "|"    # single barline — separates measures
-  double_barline:   "||"   # double barline — end of piece
+  barline:          "|"    # single barline - separates measures
+  double_barline:   "||"   # double barline - end of piece
   beat_separator:   ":"    # splits a measure into beats
   subbeat_separator: "."   # splits a beat into sub-beat subdivisions
   hold:             "-"    # extends the previous note for that slot
@@ -162,10 +162,10 @@ rhythm:
 
   # Whole-measure rest rule:
   # A measure containing ONLY separators and blanks (no notes, no holds)
-  # becomes a single whole-measure rest — applies to ALL time signatures.
+  # becomes a single whole-measure rest - applies to ALL time signatures.
 
   # ---------------------------------------------------------------------------
-  # Soft barline '!' — mid-measure visual separator
+  # Soft barline '!' - mid-measure visual separator
   # ---------------------------------------------------------------------------
   soft_barline:
     char: "!"
@@ -185,14 +185,14 @@ rhythm:
     max_per_measure: 1
 
     # 3. Must split the measure into two halves of exactly equal duration
-    #    (calculated from actual note/rest/hold values — not just beat count)
-    #    Misplacement is a HARD ERROR — file is rejected.
+    #    (calculated from actual note/rest/hold values - not just beat count)
+    #    Misplacement is a HARD ERROR - file is rejected.
     split: "equal_duration"
     misplacement_policy: "error"
 
 
 # -----------------------------------------------------------------------------
-# STACCATO — leading comma prefix on a note token
+# STACCATO - leading comma prefix on a note token
 # -----------------------------------------------------------------------------
 staccato:
   prefix: ","
@@ -205,14 +205,14 @@ staccato:
   # 2. Optional modulation key hint       (Key X)
   # 3. Optional staccato prefix           ,
   # 4. Optional melisma prefix            _
-  # 5. Solfa syllable — longest match first (2-char before 1-char)
+  # 5. Solfa syllable - longest match first (2-char before 1-char)
   # 6. Trailing octave modifiers          ' and/or ,
   # 7. Optional modulation marker         old_note/new_note
   melisma_prefix: "_"
 
 
 # -----------------------------------------------------------------------------
-# DYNAMICS — expression marks attached to notes
+# DYNAMICS - expression marks attached to notes
 # -----------------------------------------------------------------------------
 dynamics:
   # All written in parentheses inline before a note: (p)d  (ff)r
@@ -221,10 +221,10 @@ dynamics:
   valid_dynamics: [ppp, pp, p, mp, mf, f, ff, fff, sf, sfz, fp]
 
   hairpins:
-    crescendo:   "<"   # (< ) — crescendo
-    diminuendo:  ">"   # (> ) — diminuendo
+    crescendo:   "<"   # (< ) - crescendo
+    diminuendo:  ">"   # (> ) - diminuendo
 
-  fermata: "^"         # (^) — fermata over the note
+  fermata: "^"         # (^) - fermata over the note
 
   text_expressions:
     cresc: "cresc."
@@ -234,7 +234,7 @@ dynamics:
 
 
 # -----------------------------------------------------------------------------
-# VOICES — parts and their properties
+# VOICES - parts and their properties
 # -----------------------------------------------------------------------------
 voices:
   # Base voice labels (without sub-voice numbers)
@@ -249,7 +249,7 @@ voices:
   # Mixing labeled and unlabeled lines in the same block is a HARD ERROR.
   default_order: [S, A, T, B]
 
-  # Instrument parts — cannot appear in lyrics prefixes (HARD ERROR if they do)
+  # Instrument parts - cannot appear in lyrics prefixes (HARD ERROR if they do)
   instrument_parts: [PR, PL]
 
   # Voice configuration
@@ -306,18 +306,18 @@ voices:
 
 
 # -----------------------------------------------------------------------------
-# CHORDS — simultaneous notes inside angle brackets
+# CHORDS - simultaneous notes inside angle brackets
 # -----------------------------------------------------------------------------
 chords:
   open:  "<"
   close: ">"
-  sep:   " "   # SPACE separates chord members — NOT dot (avoids sub-beat ambiguity)
+  sep:   " "   # SPACE separates chord members - NOT dot (avoids sub-beat ambiguity)
   # Example: <d m s> = C-E-G chord
   # A chord occupies one beat slot and can appear as a sub-beat member: <d m s>.r
 
 
 # -----------------------------------------------------------------------------
-# LYRICS — text assigned to notes
+# LYRICS - text assigned to notes
 # -----------------------------------------------------------------------------
 lyrics:
   # Lyrics lines always follow ALL note lines within a block.
@@ -328,11 +328,11 @@ lyrics:
   hyphen:         "-"   # splits a word across notes: A-ma-zing → 3 syllables
   join:           "^"   # joins two words into one syllable on one note
   rest_skip:      "*"   # skip one note position (rest or silent note)
-  melisma_prefix: "_"   # on a NOTE: melisma — does not consume a lyric syllable
+  melisma_prefix: "_"   # on a NOTE: melisma - does not consume a lyric syllable
 
-  # Mute letters — silent letters shown for visual reference
+  # Mute letters - silent letters shown for visual reference
   # Delimited by double underscores: ev__e__ry → "every" with "e" in italic
-  # No effect on note assignment — purely visual.
+  # No effect on note assignment - purely visual.
   # PDF: mute portion rendered in italic.
   # MusicXML: delimiters stripped, rendered as plain text.
   mute_open:  "__"
@@ -364,18 +364,18 @@ lyrics:
 
 
 # -----------------------------------------------------------------------------
-# MODULATION — key changes written inline on voice lines
+# MODULATION - key changes written inline on voice lines
 # -----------------------------------------------------------------------------
 modulation:
   separator: "/"          # old_note/new_note
   scope: "voice"          # modulation marker is per voice line
-  # Optional key hint: (Ab)r/s — parenthesized valid key before the modulation.
+  # Optional key hint: (Ab)r/s - parenthesized valid key before the modulation.
   # New key can always be inferred from the old/new solfa relationship.
   # In practice all voices modulate to the same key at the same point.
 
 
 # -----------------------------------------------------------------------------
-# NAVIGATION — repeat markers, jumps, codas, segnos
+# NAVIGATION - repeat markers, jumps, codas, segnos
 # -----------------------------------------------------------------------------
 navigation:
   # All written in parentheses, inline before a note.
@@ -399,7 +399,7 @@ navigation:
     CODA:  "\U0001D10C"   # renders as coda symbol 𝄌
     SEGNO: "\U0001D10B"   # renders as segno symbol 𝄋
 
-  # Numbered variants — for pieces with multiple segnos or codas.
+  # Numbered variants - for pieces with multiple segnos or codas.
   # Append a digit to any marker: DS1 → "D.S.1" (jumps to SEGNO1), etc.
   # The number links the jump to its target:
   #   DS<N> / DSF<N> / DSC<N>  →  jump back to SEGNO<N>
@@ -410,7 +410,7 @@ navigation:
 
 
 # -----------------------------------------------------------------------------
-# EXPORT — output format settings
+# EXPORT - output format settings
 # -----------------------------------------------------------------------------
 export:
   musicxml_version: "4.0"     # MusicXML version for MuseScore 4 compatibility

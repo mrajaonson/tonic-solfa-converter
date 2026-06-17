@@ -62,7 +62,7 @@ LINE_CROP_PADDING_PX = 8
 MIN_WIDTH_PX = 2200
 UPSCALE_FACTOR_MAX = 2.0
 
-# Only rotate if skew exceeds this — avoids resampling clean pages.
+# Only rotate if skew exceeds this - avoids resampling clean pages.
 DESKEW_THRESHOLD_DEG = 0.3
 
 # Adaptive threshold parameters (cv2.adaptiveThreshold).
@@ -208,13 +208,13 @@ def _ocr_page(image, config: str = DISCOVERY_CONFIG):
 
 
 # ---------------------------------------------------------------------------
-# Tier 3 — line classification + per-line second-pass OCR
+# Tier 3 - line classification + per-line second-pass OCR
 # ---------------------------------------------------------------------------
 
 def _classify_line(tokens) -> str:
     """Return 'music' or 'lyric' for a discovery-pass line.
 
-    Conservative toward 'music' — misclassifying a lyric as music would
+    Conservative toward 'music' - misclassifying a lyric as music would
     apply the solfa whitelist to it and mangle words. Misclassifying
     music as lyric just falls back to a generic LSTM pass.
     """

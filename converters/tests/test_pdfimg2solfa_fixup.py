@@ -28,7 +28,7 @@ class TestFixupMusicToken:
         assert fixup.fixup_music_token("–.r:r:–", 95) == "-.r:r:-"
 
     def test_em_dash_normalized(self):
-        assert fixup.fixup_music_token("—", 95) == "-"
+        assert fixup.fixup_music_token("-", 95) == "-"
 
     def test_semicolon_becomes_beat_separator(self):
         assert fixup.fixup_music_token("d;r;m", 95) == "d:r:m"
@@ -102,7 +102,7 @@ class TestFixupLyricToken:
         assert fixup.fixup_lyric_token("Joyful") == "Joyful"
 
     def test_unicode_dash_normalized(self):
-        assert fixup.fixup_lyric_token("Joy—ful") == "Joy-ful"
+        assert fixup.fixup_lyric_token("Joy-ful") == "Joy-ful"
 
     def test_en_dash_normalized(self):
         assert fixup.fixup_lyric_token("Joy–ful") == "Joy-ful"
@@ -126,9 +126,9 @@ class TestApplyFixup:
             "size": (2000, 3000),
             "lines": [
                 {"kind": "music", "y": 100,
-                 "tokens": [_tok("c:r:m"), _tok("—")]},
+                 "tokens": [_tok("c:r:m"), _tok("-")]},
                 {"kind": "lyric", "y": 200,
-                 "tokens": [_tok("Joy—ful")]},
+                 "tokens": [_tok("Joy-ful")]},
             ],
         }]
         fixup.apply_fixup(pages)

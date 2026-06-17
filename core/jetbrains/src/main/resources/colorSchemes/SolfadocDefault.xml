@@ -25,7 +25,7 @@
       </value>
     </option>
 
-    <!-- Voice label — dark amber bold -->
+    <!-- Voice label - dark amber bold -->
     <option name="SOLFA_VOICE_LABEL">
       <value>
         <option name="FOREGROUND" value="7B4900"/>
@@ -33,7 +33,7 @@
       </value>
     </option>
 
-    <!-- Notes — default text color (black in light) -->
+    <!-- Notes - default text color (black in light) -->
     <option name="SOLFA_NOTE">
       <value/>
     </option>
@@ -41,7 +41,7 @@
       <value/>
     </option>
 
-    <!-- Structural music symbols — same color as header delimiter -->
+    <!-- Structural music symbols - same color as header delimiter -->
     <option name="SOLFA_REST">
       <value>
         <option name="FOREGROUND" value="007700"/>

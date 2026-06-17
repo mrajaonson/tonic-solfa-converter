@@ -1,5 +1,5 @@
 """
-solfa_spec.py — Tonic Solfa Notation Spec Loader (Python)
+solfa_spec.py - Tonic Solfa Notation Spec Loader (Python)
 ==========================================================
 
 Loads solfadoc-spec.yaml and exposes it as a plain dict.
@@ -18,7 +18,7 @@ The YAML file is located at:
     - Same directory as this script (development)
     - Package resources (installed)
 
-Do NOT import from config.py for new code — import from this module.
+Do NOT import from config.py for new code - import from this module.
 config.py is kept only as a backward-compatibility shim.
 """
 
@@ -51,7 +51,7 @@ def _find_spec_file() -> Path:
     if local.exists():
         return local
 
-    # 3. Installed package — look in package resources
+    # 3. Installed package - look in package resources
     try:
         ref = importlib.resources.files(__package__ or "solfa_spec") / _SPEC_FILENAME
         with importlib.resources.as_file(ref) as path:
@@ -137,7 +137,7 @@ class _SpecProxy:
             raise AttributeError(f"solfadoc-spec has no section '{key}'")
 
     def reload(self) -> None:
-        """Force a reload — useful in tests or when the YAML changes on disk."""
+        """Force a reload - useful in tests or when the YAML changes on disk."""
         global _spec
         _spec = None
         _get_spec()

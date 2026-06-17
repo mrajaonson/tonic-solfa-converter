@@ -39,7 +39,7 @@ class TestBuildHeaders:
 
     def test_none_defaults_render_blank(self):
         result = mod._build_headers()
-        # `:tempo:` default is None — should render as `:tempo: ` (no value)
+        # `:tempo:` default is None - should render as `:tempo: ` (no value)
         assert ":tempo: \n" in result or result.endswith(":tempo: \n")
 
     def test_overrides_replace_defaults(self):
@@ -49,7 +49,7 @@ class TestBuildHeaders:
         assert ":title: Untitled" not in result
 
     def test_overrides_ignored_when_key_unknown(self):
-        # Unknown keys silently ignored — defaults still emitted unchanged.
+        # Unknown keys silently ignored - defaults still emitted unchanged.
         result = mod._build_headers({"bogus_key": "whatever"})
         assert "bogus_key" not in result
         assert ":title: Untitled" in result
@@ -182,7 +182,7 @@ class TestRenderText:
 
 
 # ---------------------------------------------------------------------------
-# convert() — orchestration (preprocess/OCR/refine all mocked)
+# convert() - orchestration (preprocess/OCR/refine all mocked)
 # ---------------------------------------------------------------------------
 
 @pytest.fixture

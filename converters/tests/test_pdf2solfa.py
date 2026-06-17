@@ -118,7 +118,7 @@ def test_is_note_line_no_colon():
 
 def test_is_note_line_colon_but_no_notes():
     # Single-letter note tokens (m, s) are substrings of "My" and "Song",
-    # so this returns True — filtering non-note lines requires context beyond this function
+    # so this returns True - filtering non-note lines requires context beyond this function
     assert _is_note_line("Title: My Song") is True
 
 

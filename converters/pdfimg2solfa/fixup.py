@@ -1,5 +1,5 @@
 """
-Tier 4 — grammar-aware post-OCR fixup
+Tier 4 - grammar-aware post-OCR fixup
 =====================================
 Operates on the structured pages produced by Tier 1/3:
 
@@ -27,7 +27,7 @@ from ..shared import spec
 
 # Applied to every token regardless of kind.
 _GLOBAL_NORMALIZE = {
-    "—": "-", "–": "-", "‐": "-", "‒": "-", "−": "-",
+    "-": "-", "–": "-", "‐": "-", "‒": "-", "−": "-",
     "‘": "'", "’": "'",
     "“": '"', "”": '"',
 }

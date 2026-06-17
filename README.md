@@ -46,8 +46,8 @@ A m : d : d ! d : d : d
 | Header            | Description                                           |
 |-------------------|-------------------------------------------------------|
 | `:title:`         | Song title                                            |
-| `:author:`        | Author — repeatable for multiple authors              |
-| `:composer:`      | Composer — repeatable for multiple composers          |
+| `:author:`        | Author - repeatable for multiple authors              |
+| `:composer:`      | Composer - repeatable for multiple composers          |
 | `:key:`           | Key signature (e.g. `G`, `Ab`)                        |
 | `:keyheader:`     | Custom label for key display (default: `Key:`)        |
 | `:tempo:`         | BPM (e.g. `80`)                                       |

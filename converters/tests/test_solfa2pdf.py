@@ -1,4 +1,4 @@
-"""Unit tests for converters.solfa2pdf — parser and data structures."""
+"""Unit tests for converters.solfa2pdf - parser and data structures."""
 
 import pytest
 from converters.solfa2pdf.data_structures import (
@@ -88,7 +88,7 @@ class TestMeasure:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# _parse_header_line / parse — header properties
+# _parse_header_line / parse - header properties
 # ──────────────────────────────────────────────────────────────────────
 
 class TestParseHeader:

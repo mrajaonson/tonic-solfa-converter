@@ -48,8 +48,8 @@ python3 -m converters.solfareformat input.txt [output.txt]
 ## Shared Utilities
 
 `shared/` contains common utilities:
-- `solfa_spec.py` — Loads `solfadoc-spec.yaml` (the notation spec) and exposes it as a plain dict; import via `from shared import spec`
-- `solfa_metadata.py` — Default metadata headers for converters
+- `solfa_spec.py` - Loads `solfadoc-spec.yaml` (the notation spec) and exposes it as a plain dict; import via `from shared import spec`
+- `solfa_metadata.py` - Default metadata headers for converters
 
 ---
 
@@ -62,8 +62,8 @@ Solfa text files use a header + notation format. Comments start with `//`.
 | Header            | Description                                           |
 |-------------------|-------------------------------------------------------|
 | `:title:`         | Song title                                            |
-| `:author:`        | Author — repeatable for multiple authors              |
-| `:composer:`      | Composer — repeatable for multiple composers          |
+| `:author:`        | Author - repeatable for multiple authors              |
+| `:composer:`      | Composer - repeatable for multiple composers          |
 | `:key:`           | Key signature (e.g. `G`, `Ab`)                        |
 | `:keyheader:`     | Custom label for key display (default: `Key:`)        |
 | `:tempo:`         | BPM (e.g. `80`)                                       |
@@ -79,7 +79,7 @@ Solfa text files use a header + notation format. Comments start with `//`.
 ### Notation
 
 - **Notes:** `d` (do), `r` (re), `m` (mi), `f` (fa), `s` (sol), `l` (la), `t` (ti)
-- **Octave modifiers:** `'` (up), `,` (down) — e.g. `d'` (do up), `d,` (do down)
+- **Octave modifiers:** `'` (up), `,` (down) - e.g. `d'` (do up), `d,` (do down)
 - **Barlines:** `|` (measure), `||` (double barline), `!` (soft barline)
 - **Beat separators:** `:` (beat), `.` (sub-beat)
 - **Rest:** `*` (explicit rest)
@@ -94,7 +94,7 @@ Solfa text files use a header + notation format. Comments start with `//`.
 ### Example
 
 ```
-// Amazing Grace — 3/4
+// Amazing Grace - 3/4
 :title: Amazing Grace
 :author: John Newton
 :composer: William Walker
@@ -118,7 +118,7 @@ Solfa text files use a header + notation format. Comments start with `//`.
 1. **Start with a scanned hymnal:**
    ```bash
    python3 -m converters.pdfimg2solfa hymnal_page.pdf hymn.txt
-   # Edit hymn.txt — fix OCR errors, fill metadata headers
+   # Edit hymn.txt - fix OCR errors, fill metadata headers
    ```
 
 2. **Render directly to PDF:**

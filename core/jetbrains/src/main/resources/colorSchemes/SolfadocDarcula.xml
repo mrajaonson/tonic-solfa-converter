@@ -25,7 +25,7 @@
       </value>
     </option>
 
-    <!-- Voice label — amber bold, anchors each music line -->
+    <!-- Voice label - amber bold, anchors each music line -->
     <option name="SOLFA_VOICE_LABEL">
       <value>
         <option name="FOREGROUND" value="FFC66D"/>
@@ -33,7 +33,7 @@
       </value>
     </option>
 
-    <!-- Notes — default text color (white in dark) -->
+    <!-- Notes - default text color (white in dark) -->
     <option name="SOLFA_NOTE">
       <value/>
     </option>
@@ -41,7 +41,7 @@
       <value/>
     </option>
 
-    <!-- Structural music symbols — same color as header delimiter -->
+    <!-- Structural music symbols - same color as header delimiter -->
     <option name="SOLFA_REST">
       <value>
         <option name="FOREGROUND" value="6A8759"/>
