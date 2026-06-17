@@ -291,11 +291,22 @@ def build_score(parsed: dict) -> stream.Score:
     nav_markers: dict[int, str] = {}  # measure_index → nav_str (collected from first voice)
     key_changes: dict[int, str] = {}  # measure_index → new_key (collected from first voice)
 
+    # ── Sort voices: S* before A* before T* before B*, numbered after unnumbered ──
+    _base_rank = {v: i for i, v in enumerate(spec["voices"]["default_order"])}
+
+    def _voice_sort_key(label: str) -> tuple:
+        base = _get_voice_base(label)
+        group = _base_rank.get(base, 99)
+        suffix = label[len(base):]
+        num = int(suffix) if suffix.isdigit() else (0 if not suffix else 99)
+        return (group, num)
+
     # ── Build each voice part ──
-    for voice_label, measures_raw in voices.items():
+    for voice_label, measures_raw in sorted(voices.items(), key=lambda kv: _voice_sort_key(kv[0])):
         part = stream.Part()
         part.id = voice_label
         part.partName = _get_voice_full_name(voice_label)
+        part.partAbbreviation = voice_label  # S, S1, T, T2, B, etc.
 
         part.insert(0, _get_instrument(voice_label))
 

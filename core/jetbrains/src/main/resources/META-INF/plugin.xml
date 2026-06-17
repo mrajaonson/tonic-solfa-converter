@@ -27,5 +27,8 @@
 
         <additionalTextAttributes scheme="Darcula" file="colorSchemes/SolfadocDarcula.xml"/>
         <additionalTextAttributes scheme="Default" file="colorSchemes/SolfadocDefault.xml"/>
+
+        <externalFormatProcessor
+            implementation="org.solfadoc.format.SolfaExternalFormatProcessor"/>
     </extensions>
 </idea-plugin>

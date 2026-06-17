@@ -116,7 +116,7 @@ class TonicSolfaPDFRenderer:
         # Render each line of the notes content with word wrapping
         self.c.setFont(self.notation_font, self.note_font_size)
         line_height = self.note_font_size + 3
-        notes_x = self._block_start_x
+        notes_x = getattr(self, '_block_start_x', self.margin_left)
         max_width = self.page_width - self.margin_right - notes_x
 
         for paragraph in self.song.notes.split("\n"):
@@ -253,121 +253,81 @@ class TonicSolfaPDFRenderer:
         self.y_position -= self.header_font_size + 8
 
     def _draw_all_blocks(self):
-        """Draw all blocks of the song"""
-        # Collect all measures across all voices
-        all_voice_data = {}  # voice_label -> list of all measures
-
-        for block in self.song.blocks:
-            for voice_line in block.voice_lines:
-                if voice_line.voice_label not in all_voice_data:
-                    all_voice_data[voice_line.voice_label] = []
-                all_voice_data[voice_line.voice_label].extend(voice_line.measures)
-
-        # Determine voice order
-        voice_order = []
-        for v in spec["voices"]["default_order"]:
-            if v in all_voice_data:
-                voice_order.append(v)
-        # Add any other voices
-        for v in all_voice_data:
-            if v not in voice_order:
-                voice_order.append(v)
-
-        if not voice_order:
+        """Draw all blocks of the song, each block rendered with its own voice set."""
+        if not self.song.blocks:
             return
 
-        total_measures = max(len(all_voice_data[v]) for v in voice_order)
+        # Determine global label width: if any block is non-standard SATB, reserve label space
+        # so that measure widths are consistent across all blocks.
+        def _block_voice_order(block):
+            labels = {vl.voice_label for vl in block.voice_lines}
+            order = [v for v in spec["voices"]["default_order"] if v in labels]
+            order += [v for v in labels if v not in order]
+            return order
 
-        # Collect lyrics per block
-        block_lyrics = []
-        measure_offset = 0
+        has_any_non_satb = any(
+            not (set(_block_voice_order(b)) == set(spec["voices"]["default_order"]) and len(b.voice_lines) == 4)
+            for b in self.song.blocks if b.voice_lines
+        )
+        self._voice_label_width = 8 * mm if has_any_non_satb else 0
+        available_width = self.content_width - self._voice_label_width
+        self._measure_width = available_width / self.measures_per_line
+
+        # Find the widest line across the entire song, center it, and use that
+        # start_x for every line and the notes section — so all lines are left-aligned
+        # relative to each other, with the widest one centered on the page.
+        max_line_measures = 0
         for block in self.song.blocks:
-            if block.voice_lines:
-                num_measures = len(block.voice_lines[0].measures)
-                block_lyrics.append({
-                    'start': measure_offset,
-                    'end': measure_offset + num_measures,
-                    'lyrics': block.lyric_lines
-                })
-                measure_offset += num_measures
+            if not block.voice_lines:
+                continue
+            n = len(block.voice_lines[0].measures)
+            idx = 0
+            while idx < n:
+                end = min(idx + self.measures_per_line, n)
+                max_line_measures = max(max_line_measures, end - idx)
+                idx = end
+        if max_line_measures == 0:
+            max_line_measures = self.measures_per_line
+        widest_content = self._voice_label_width + max_line_measures * self._measure_width
+        self._block_start_x = self.margin_left + (self.content_width - widest_content) / 2
 
-        # Build list of block boundaries (start indices)
-        block_boundaries = set()
-        for bl in block_lyrics:
-            block_boundaries.add(bl['start'])
-
-        # Pre-compute all line groups to find the max measures per line,
-        # then derive a single centering offset shared by all lines.
-        show_voice_labels = not (set(voice_order) == set(spec["voices"]["default_order"]) and len(voice_order) == 4)
-        voice_label_width = 8 * mm if show_voice_labels else 0
-        available_width = self.content_width - voice_label_width
-        measure_width = available_width / self.measures_per_line
-
-        line_groups = []
-        idx = 0
-        while idx < total_measures:
-            end = min(idx + self.measures_per_line, total_measures)
-            for boundary in sorted(block_boundaries):
-                if idx < boundary < end:
-                    end = boundary
-                    break
-            line_groups.append((idx, end))
-            idx = end
-
-        max_line_measures = max(end - start for start, end in line_groups) if line_groups else self.measures_per_line
-        block_width = voice_label_width + max_line_measures * measure_width
-        self._block_start_x = self.margin_left + (self.content_width - block_width) / 2
-
-        # Draw measures in groups (lines), respecting block boundaries
-        measure_idx = 0
-        while measure_idx < total_measures:
-            end_idx = min(measure_idx + self.measures_per_line, total_measures)
-
-            # Don't cross a block boundary: if a new block starts within this line,
-            # stop at that boundary instead
-            for boundary in sorted(block_boundaries):
-                if measure_idx < boundary < end_idx:
-                    end_idx = boundary
-                    break
-
-            # Skip lines of entirely empty measures at the end
-            all_empty = True
-            for v in voice_order:
-                measures = all_voice_data.get(v, [])
-                for m_idx in range(measure_idx, min(end_idx, len(measures))):
-                    if not measures[m_idx].is_empty:
-                        all_empty = False
-                        break
-                if not all_empty:
-                    break
-
-            # Check if there are any lyrics for these measures
-            has_lyrics = False
-            for bl in block_lyrics:
-                if bl['start'] < end_idx and bl['end'] > measure_idx and bl['lyrics']:
-                    has_lyrics = True
-                    break
-
-            if all_empty and not has_lyrics and measure_idx > 0:
-                measure_idx = end_idx
+        # Render each block independently
+        for block in self.song.blocks:
+            if not block.voice_lines:
                 continue
 
-            # Calculate height needed for this line
-            num_voices = len(voice_order)
-            line_height = (num_voices * self.voice_row_height +
-                           2 * self.lyric_row_height +
-                           self.block_spacing)
+            voice_order = _block_voice_order(block)
+            block_voice_data = {vl.voice_label: vl.measures for vl in block.voice_lines}
+            num_measures = len(block.voice_lines[0].measures)
 
-            self._check_page_space(line_height)
+            block_lyrics = [{'start': 0, 'end': num_measures, 'lyrics': block.lyric_lines}]
 
-            # Draw this group of measures
-            self._draw_measure_group(
-                all_voice_data, voice_order,
-                measure_idx, end_idx,
-                block_lyrics
-            )
+            measure_idx = 0
+            while measure_idx < num_measures:
+                end_idx = min(measure_idx + self.measures_per_line, num_measures)
 
-            measure_idx = end_idx
+                # Skip trailing all-empty lines
+                all_empty = all(
+                    block_voice_data.get(v, [])[m].is_empty
+                    for v in voice_order
+                    for m in range(measure_idx, min(end_idx, len(block_voice_data.get(v, []))))
+                )
+                has_lyrics = bool(block.lyric_lines)
+                if all_empty and not has_lyrics and measure_idx > 0:
+                    measure_idx = end_idx
+                    continue
+
+                lyrics_by_voice = self._organize_lyrics_by_target_voice(
+                    block_lyrics, measure_idx, end_idx, voice_order)
+                num_lyric_rows = sum(len(lyrics_by_voice.get(v, [])) for v in voice_order)
+                line_height = (len(voice_order) * self.voice_row_height +
+                               max(num_lyric_rows, 1) * (self.lyric_row_height + self.lyric_bottom_margin) +
+                               self.block_spacing + 9)
+
+                self._check_page_space(line_height)
+                self._draw_measure_group(block_voice_data, voice_order,
+                                         measure_idx, end_idx, block_lyrics)
+                measure_idx = end_idx
 
     # ─────────────────────────────────────────────────────────────────
     # Note center X computation (shared by fermatas, key changes, lyrics)
@@ -432,14 +392,14 @@ class TonicSolfaPDFRenderer:
         """Draw a group of measures (one line of the score) with lyrics under target voices"""
         num_measures = end_idx - start_idx
 
-        # Check if we have all 4 standard SATB voices - if so, don't show labels
+        # Show labels unless this block is exactly standard 4-voice SATB
         show_voice_labels = not (set(voice_order) == set(spec["voices"]["default_order"]) and len(voice_order) == 4)
 
-        # Calculate column widths - use consistent measure width based on measures_per_line
-        voice_label_width = 8 * mm if show_voice_labels else 0
-        available_width = self.content_width - voice_label_width
-        measure_width = available_width / self.measures_per_line
+        # Use globally-consistent widths (computed once in _draw_all_blocks)
+        voice_label_width = self._voice_label_width
+        measure_width = self._measure_width
 
+        # All lines in a block share the same start_x (set per-block in _draw_all_blocks)
         start_x = self._block_start_x
         start_y = self.y_position
 
@@ -458,8 +418,13 @@ class TonicSolfaPDFRenderer:
         self.c.setFont("Helvetica", self.small_font_size)
         self.c.setFillColor(colors.Color(0.4, 0.4, 0.4))
         x = start_x + voice_label_width
+        ref_voice = voice_order[0] if voice_order else None
+        ref_measures = all_voice_data.get(ref_voice, []) if ref_voice else []
         for m_idx in range(start_idx, end_idx):
-            measure_num = m_idx + 1
+            if m_idx < len(ref_measures) and ref_measures[m_idx].number:
+                measure_num = ref_measures[m_idx].number
+            else:
+                measure_num = m_idx + 1
             self.c.drawString(x + 1, start_y + 1, str(measure_num))
             x += measure_width
         self.c.setFillColor(colors.black)
@@ -1040,7 +1005,14 @@ class TonicSolfaPDFRenderer:
         block_end = lyric_info['block_end']
 
         target_voice = self._get_target_voice(lyric.voices, voice_order)
-        ref_measures = all_voice_data.get(target_voice, [])
+
+        # For common/shared lyrics (spanning multiple voices), sync syllables to the
+        # first (melody) voice rather than the last placement voice.
+        if len(lyric.voices) > 1:
+            ref_voice = next((v for v in voice_order if v in lyric.voices), target_voice)
+        else:
+            ref_voice = target_voice
+        ref_measures = all_voice_data.get(ref_voice, [])
 
         if not ref_measures and voice_order:
             ref_measures = all_voice_data.get(voice_order[0], [])

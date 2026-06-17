@@ -1,25 +1,39 @@
-# core
+# Solfadoc — JetBrains Plugin
 
+Syntax highlighting and code reformatting for `.solfa` files (tonic solfa notation) in JetBrains IDEs (IntelliJ IDEA, etc.).
 
-This project uses [Gradle](https://gradle.org/).
-To build and run the application, use the *Gradle* tool window by clicking the Gradle icon in the right-hand toolbar,
-or run it directly from the terminal:
+## Features
 
-* Run `./gradlew run` to build and run the application.
-* Run `./gradlew build` to only build the application.
-* Run `./gradlew check` to run all checks, including tests.
-* Run `./gradlew clean` to clean all build outputs.
+- **Syntax highlighting** — voice labels, notes, barlines, beat separators, dynamics, navigation markers, lyrics, and section headers each get distinct colours; Dark and Light colour schemes included
+- **Reformat Code** (Ctrl+Alt+L) — aligns all tonic solfa blocks like a table: voice labels, barlines, and beat separators line up across every block in the file; lyrics are indented to the first note column (lines in the `[notes]` section are left untouched)
 
-Note the usage of the Gradle Wrapper (`./gradlew`).
-This is the suggested way to use Gradle in production projects.
+## Build
 
-[Learn more about the Gradle Wrapper](https://docs.gradle.org/current/userguide/gradle_wrapper.html).
+This project uses Gradle. The plugin is a subproject under `jetbrains/`.
 
-[Learn more about Gradle tasks](https://docs.gradle.org/current/userguide/command_line_interface.html#common_tasks).
+```shell
+# Build the distributable zip
+./gradlew :jetbrains:buildPlugin
 
+# Output: jetbrains/build/distributions/jetbrains.zip
+```
 
-This project follows the suggested multi-module setup and consists of the `app` and `utils` subprojects.
-The shared build logic was extracted to a convention plugin located in `buildSrc`.
+## Installation
 
-This project uses a version catalog (see `gradle/libs.versions.toml`) to declare and version dependencies
-and both a build cache and a configuration cache (see `gradle.properties`).
+1. Build the plugin (see above)
+2. In your JetBrains IDE: **Settings → Plugins → ⚙ → Install Plugin from Disk…**
+3. Select `jetbrains/build/distributions/jetbrains.zip`
+
+## Development
+
+```shell
+./gradlew :jetbrains:compileKotlin   # compile only
+./gradlew :jetbrains:test            # run formatter tests
+./gradlew :jetbrains:runIde          # launch a sandboxed IDE instance with the plugin loaded
+```
+
+Tests live in `jetbrains/src/test/kotlin/org/solfadoc/format/SolfaFormatterTest.kt` and use JUnit 5.
+
+## File format
+
+Files use the `.solfa` extension and are automatically detected as `Solfadoc` language.

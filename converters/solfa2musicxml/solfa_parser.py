@@ -561,6 +561,16 @@ def _extract_notes_section(lines: list[str]) -> tuple[list[str], str]:
     return lines, ""
 
 
+def _make_rest_measure(beats_per_measure: int) -> dict:
+    """Return a measure dict filled with rests (used for voice padding)."""
+    return {
+        "beats": [[NoteEvent(is_rest=True, raw=" ")] for _ in range(beats_per_measure)],
+        "modulations": [],
+        "key_changes": [],
+        "navigation": None,
+    }
+
+
 def parse_file(filepath: str) -> dict:
     """
     Parse a tonic solfa .txt file.
@@ -572,56 +582,70 @@ def parse_file(filepath: str) -> dict:
     lines, notes_content = _extract_notes_section(lines)
     props, remaining = parse_header(lines)
 
-    voice_data: dict[str, list] = {}
-    lyrics_data: dict[str, dict] = {}
+    # Beats per measure — needed to build rest-fill measures for absent voices.
+    time_sig = props.get("timesig", spec["defaults"]["timesig"])
+    beats_per_measure = int(time_sig.split("/")[0])
 
-    default_voice_order = list(spec["voices"]["default_order"])
-    voice_index = 0
-    prev_was_note_line = False
-    last_voice_label = "S"
-
+    # ── Group remaining lines into blocks (separated by blank lines) ──
+    raw_blocks: list[list[str]] = []
+    current: list[str] = []
     for line in remaining:
         stripped = line.strip()
-
-        if not stripped:
-            if prev_was_note_line:
-                prev_was_note_line = False
-            continue
-
-        # Skip comment lines
-        if stripped.startswith('//'):
-            continue
-
-        if _is_note_line(stripped):
-            if not prev_was_note_line:
-                voice_index = 0
-            prev_was_note_line = True
-
-            label, measures = parse_voice_line(stripped)
-            if label is None:
-                if voice_index < len(default_voice_order):
-                    label = default_voice_order[voice_index]
-                else:
-                    label = f"V{voice_index + 1}"
-                voice_index += 1
-            else:
-                voice_index += 1
-
-            last_voice_label = label
-
-            if label not in voice_data:
-                voice_data[label] = []
-            voice_data[label].extend(measures)
-
+        if not stripped or stripped.startswith("//"):
+            if current:
+                raw_blocks.append(current)
+                current = []
         else:
-            prev_was_note_line = False
+            current.append(stripped)
+    if current:
+        raw_blocks.append(current)
 
-            voices, verse_id, syllables = parse_lyrics_line(stripped)
-            if voices is None:
-                # No voice prefix → all voices
-                targets = list(voice_data.keys())
+    voice_data: dict[str, list] = {}   # label → [measure, ...]  (all blocks, temporally ordered)
+    lyrics_data: dict[str, dict] = {}  # label → {verse_id: [syllables]}
+    default_voice_order = list(spec["voices"]["default_order"])
+
+    # Total measures accumulated so far across all processed blocks
+    total_measures_so_far = 0
+
+    for block_lines in raw_blocks:
+        note_lines = [l for l in block_lines if _is_note_line(l)]
+        lyric_lines = [l for l in block_lines if not _is_note_line(l)]
+
+        if not note_lines:
+            continue
+
+        # ── Parse this block's voices ──
+        block_voices: dict[str, list] = {}
+        for i, line in enumerate(note_lines):
+            label, measures = parse_voice_line(line)
+            if label is None:
+                label = default_voice_order[i] if i < len(default_voice_order) else f"V{i + 1}"
+            block_voices[label] = measures
+
+        block_measure_count = max(len(m) for m in block_voices.values())
+
+        # ── Merge into voice_data with correct temporal alignment ──
+        all_labels = set(voice_data.keys()) | set(block_voices.keys())
+        for label in all_labels:
+            if label not in voice_data:
+                # Voice is new: back-fill with rests for all prior blocks
+                voice_data[label] = [_make_rest_measure(beats_per_measure)
+                                     for _ in range(total_measures_so_far)]
+
+            if label in block_voices:
+                voice_data[label].extend(block_voices[label])
             else:
-                targets = voices
+                # Voice absent in this block: fill with rest measures
+                for _ in range(block_measure_count):
+                    voice_data[label].append(_make_rest_measure(beats_per_measure))
+
+        total_measures_so_far += block_measure_count
+
+        # ── Parse lyrics, targeting only this block's active voices ──
+        block_labels = list(block_voices.keys())
+        for lyric_line in lyric_lines:
+            voices_prefix, verse_id, syllables = parse_lyrics_line(lyric_line)
+            targets = voices_prefix if voices_prefix is not None else block_labels
 
             for target in targets:
                 if target not in lyrics_data:

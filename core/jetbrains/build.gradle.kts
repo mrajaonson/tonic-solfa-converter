@@ -14,6 +14,9 @@ dependencies {
     intellijPlatform {
         intellijIdeaCommunity("2024.3")
     }
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 intellijPlatform {
@@ -26,4 +29,5 @@ intellijPlatform {
             name = "solfadoc"
         }
     }
+    buildSearchableOptions = false
 }

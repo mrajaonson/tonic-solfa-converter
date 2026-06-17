@@ -33,7 +33,7 @@
       </value>
     </option>
 
-    <!-- Notes - default text color (black in light) -->
+    <!-- Notes - both natural and chromatic use the default text color -->
     <option name="SOLFA_NOTE">
       <value/>
     </option>
@@ -78,11 +78,13 @@
     <option name="SOLFA_DYNAMICS">
       <value>
         <option name="FOREGROUND" value="007700"/>
+        <option name="FONT_TYPE" value="1"/>
       </value>
     </option>
     <option name="SOLFA_NAVIGATION">
       <value>
         <option name="FOREGROUND" value="007700"/>
+        <option name="FONT_TYPE" value="1"/>
       </value>
     </option>
     <option name="SOLFA_CHORD_BRACKET">

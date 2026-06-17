@@ -1,8 +1,8 @@
 {
   "name": "solfadoc",
   "displayName": "Solfadoc",
-  "description": "Syntax highlighting for solfadoc notation files",
-  "version": "0.1.0",
+  "description": "Syntax highlighting and formatting for solfadoc notation files",
+  "version": "0.0.1",
   "publisher": "solfadoc",
   "engines": {
     "vscode": "^1.85.0"
@@ -10,6 +10,22 @@
   "categories": [
     "Programming Languages"
   ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:solfadoc"
+  ],
+  "scripts": {
+    "compile": "tsc -p tsconfig.json",
+    "watch": "tsc -watch -p tsconfig.json",
+    "test": "npm run compile && node --test out/test/formatter.test.js",
+    "package": "npm run compile && vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.0"
+  },
   "contributes": {
     "languages": [
       {
@@ -38,6 +54,18 @@
             "scope": "constant.language.voice-label.solfa",
             "settings": {
               "foreground": "#E5C07B",
+              "fontStyle": "bold"
+            }
+          },
+          {
+            "scope": "storage.modifier.dynamics.solfa",
+            "settings": {
+              "fontStyle": "bold"
+            }
+          },
+          {
+            "scope": "entity.name.label.navigation.solfa",
+            "settings": {
               "fontStyle": "bold"
             }
           }
