@@ -6,36 +6,9 @@ from music21 import (
     duration, metadata, tie, repeat, expressions, dynamics, chord,
     articulations,
 )
-import re
-from ..shared import spec
+from ..shared import spec, nav_base as _nav_base, nav_number as _nav_number, navigation_display as _nav_display
 from music21 import instrument as m21instrument
 from .solfa_pitch import solfa_to_pitch, resolve_modulation
-
-_NUMBERED_NAV_RE = re.compile(
-    r'^(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)(\d+)$'
-)
-
-
-def _nav_base(nav_str: str) -> str:
-    """Return the base marker name, stripping any trailing number."""
-    m = _NUMBERED_NAV_RE.match(nav_str)
-    return m.group(1) if m else nav_str
-
-
-def _nav_number(nav_str: str) -> str | None:
-    """Return the trailing number of a numbered marker, or None."""
-    m = _NUMBERED_NAV_RE.match(nav_str)
-    return m.group(2) if m else None
-
-
-def _nav_display(nav_str: str) -> str:
-    """Return display text for a navigation marker (plain or numbered)."""
-    m = _NUMBERED_NAV_RE.match(nav_str)
-    if m:
-        base, num = m.group(1), m.group(2)
-        base_display = spec["navigation"]["markers"].get(base, base)
-        return f"{base_display} {num}"
-    return spec["navigation"]["markers"].get(nav_str, nav_str)
 
 _INSTRUMENT_CLASS_MAP = {
     "Soprano": m21instrument.Soprano,

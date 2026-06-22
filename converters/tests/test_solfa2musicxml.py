@@ -10,10 +10,10 @@ from converters.solfa2musicxml.solfa_parser import (
     _extract_voice_label,
     _split_measures,
     _detect_modulation,
-    _is_navigation_marker,
     _protect_chord_dots,
     _restore_chord_dots,
 )
+from converters.shared import is_navigation_marker as _is_navigation_marker
 from converters.solfa2musicxml.duration import (
     assign_durations,
     consolidate_holds,

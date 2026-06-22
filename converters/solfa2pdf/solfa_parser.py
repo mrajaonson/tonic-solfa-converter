@@ -1,6 +1,16 @@
 import re
 from typing import List, Optional
-from ..shared import spec
+from ..shared import (
+    spec,
+    match_solfa_token,
+    consume_octave_modifiers,
+    nav_base,
+    nav_number,
+    navigation_display,
+    voice_label_alternation,
+    extract_voice_label_sequence,
+    split_lyric_prefix,
+)
 from .data_structures import (Song, VoiceLine, Measure, Note, NoteType, Block, LyricLine, Expression, Beat)
 
 class TonicSolfaParser:
@@ -174,7 +184,7 @@ class TonicSolfaParser:
         notation = line
 
         # Try to match voice label at start (e.g., "S1 |d:r:m:f|" or "S |d:r:m:f|")
-        label_match = re.match(r'^([SATB]\d*|PR|PL)\s+(\|.*)$', line)
+        label_match = re.match(rf'^({voice_label_alternation()}|[SATB]\d+)\s+(\|.*)$', line)
         if label_match:
             voice_label = label_match.group(1)
             notation = label_match.group(2)
@@ -415,21 +425,13 @@ class TonicSolfaParser:
             return None
 
         # Try to match solfa tokens (longest first)
-        matched_solfa = None
-        for token in spec["notes"]["tokens_sorted"]:
-            if text.lower().startswith(token):
-                matched_solfa = token
-                break
+        matched_solfa = match_solfa_token(text, ignore_case=True)
 
         if not matched_solfa:
             return None
 
         # Get octave modifiers after the solfa
-        remaining = text[len(matched_solfa):]
-        octave_mod = ""
-        while remaining and remaining[0] in (spec["octave"]["up_char"], spec["octave"]["down_char"]):
-            octave_mod += remaining[0]
-            remaining = remaining[1:]
+        octave_mod, _ = consume_octave_modifiers(text[len(matched_solfa):])
 
         return Note(type=NoteType.NOTE, solfa=matched_solfa, octave_modifier=octave_mod)
 
@@ -449,22 +451,8 @@ class TonicSolfaParser:
             return Expression(type="text", value=spec["dynamics"]["text_expressions"][content])
         else:
             # Check for numbered navigation markers (DS1, DS2, S1, S2, DSF1, etc.)
-            # Match patterns like DS1, DS2, S1, S2, DSF1, DSC1, etc.
-            match = re.match(r'^(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)(\d+)$', content)
-            if match:
-                base_marker = match.group(1)
-                number = match.group(2)
-                if base_marker in spec["navigation"]["markers"]:
-                    base_text = spec["navigation"]["markers"][base_marker]
-                    # For Segno symbol, append number directly
-                    if base_text == spec["navigation"]["segno_symbol"]:
-                        display_text = f"{base_text}{number}"
-                    elif base_text == spec["navigation"]["coda_symbol"]:
-                        display_text = f"{base_text}{number}"
-                    else:
-                        # For text markers like D.S., append number
-                        display_text = f"{base_text} {number}"
-                    return Expression(type="navigation", value=display_text)
+            if nav_base(content) in spec["navigation"]["markers"] and nav_number(content) is not None:
+                return Expression(type="navigation", value=navigation_display(content))
         return None
 
     def _parse_lyric_line(self, line: str, available_voices: List[str]) -> Optional[LyricLine]:
@@ -486,18 +474,7 @@ class TonicSolfaParser:
             parsed = False
 
             # Check for verse+voices (e.g. "1SA", "2B", "RS1S2", "1S1S2")
-            v_part = ""
-            voice_part = ""
-            if prefix.startswith('R'):
-                v_part = 'R'
-                voice_part = prefix[1:]
-            elif prefix[0].isdigit():
-                # Extract leading digits as verse
-                i = 0
-                while i < len(prefix) and prefix[i].isdigit():
-                    i += 1
-                v_part = prefix[:i]
-                voice_part = prefix[i:]
+            v_part, voice_part = split_lyric_prefix(prefix)
 
             if v_part:
                 verse = v_part
@@ -542,22 +519,7 @@ class TonicSolfaParser:
 
     def _parse_voice_labels(self, voice_str: str) -> List[str]:
         """Parse concatenated voice labels like 'SA', 'S1S2T' into a list"""
-        labels = []
-        i = 0
-        while i < len(voice_str):
-            if voice_str[i] in 'SATB':
-                if i + 1 < len(voice_str) and voice_str[i + 1].isdigit():
-                    labels.append(voice_str[i:i + 2])
-                    i += 2
-                else:
-                    labels.append(voice_str[i])
-                    i += 1
-            else:
-                break
-        # Only valid if we consumed the entire string
-        if i == len(voice_str) and labels:
-            return labels
-        return []
+        return extract_voice_label_sequence(voice_str, spec["voices"]["base_labels"], allow_numbered=True)
 
     def _parse_syllables(self, text: str) -> List[str]:
         """Parse lyrics text into syllables"""

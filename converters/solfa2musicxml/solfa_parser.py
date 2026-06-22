@@ -3,7 +3,15 @@
 import re
 from pathlib import Path
 from .models import NoteEvent
-from ..shared import spec
+from ..shared import (
+    spec,
+    match_solfa_token,
+    consume_octave_modifiers,
+    is_navigation_marker,
+    voice_label_alternation,
+    extract_voice_label_sequence,
+    split_lyric_prefix,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -63,19 +71,6 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
 
 _DYNAMIC_PREFIX_RE = re.compile(r'^\(([^)]+)\)')
 
-# Regex for numbered navigation markers (DS1, SEGNO2, S1, CODA1, etc.)
-# S is a short alias for SEGNO, C for CODA
-_NUMBERED_NAV_RE = re.compile(
-    r'^(DS|DSF|DSC|SEGNO|CODA|TC|DC|DCF|DCC|FINE)(\d+)$'
-)
-
-
-def _is_navigation_marker(value: str) -> bool:
-    """Check if a paren value is a navigation marker (plain or numbered)."""
-    if value in spec["navigation"]["markers"]:
-        return True
-    return bool(_NUMBERED_NAV_RE.match(value))
-
 
 def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     """Parse one note token from the beginning of *s*."""
@@ -95,7 +90,7 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         s = s[dm.end():]
         if value == spec["dynamics"]["fermata"]:
             has_fermata = True
-        elif _is_navigation_marker(value):
+        elif is_navigation_marker(value):
             nav = value
         elif value in spec["dynamics"]["valid_dynamics"]:
             dyn = value
@@ -153,11 +148,7 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
         return NoteEvent(is_rest=True, raw="*", dynamic=dyn, fermata=has_fermata, navigation=nav), s[1:]
 
     # --- solfa note (longest match) ---
-    matched_solfa = None
-    for tok in spec["notes"]["tokens_sorted"]:
-        if s.startswith(tok):
-            matched_solfa = tok
-            break
+    matched_solfa = match_solfa_token(s)
     if matched_solfa is None:
         if dyn or has_fermata or nav:
             return NoteEvent(is_rest=True, raw=" ", dynamic=dyn, fermata=has_fermata, navigation=nav), s
@@ -169,13 +160,8 @@ def _parse_single_token(s: str) -> tuple[NoteEvent | None, str]:
     is_flat = matched_solfa in spec["notes"]["chromatic_flat"]
 
     # --- octave modifiers ---
-    octave_shift = 0
-    while s and s[0] == spec["octave"]["up_char"]:
-        octave_shift += 1
-        s = s[1:]
-    while s and s[0] == spec["octave"]["down_char"]:
-        octave_shift -= 1
-        s = s[1:]
+    octave_mods, s = consume_octave_modifiers(s)
+    octave_shift = octave_mods.count(spec["octave"]["up_char"]) - octave_mods.count(spec["octave"]["down_char"])
 
     evt = NoteEvent(
         solfa=matched_solfa, semitone=semitone, octave_shift=octave_shift,
@@ -261,8 +247,7 @@ def parse_beat_tokens(beat_str: str) -> list[NoteEvent]:
 # ──────────────────────────────────────────────────────────────────────
 
 # Build voice label regex from config
-_label_alts = "|".join(re.escape(lbl) for lbl in sorted(spec["voices"]["voice_config"].keys(), key=len, reverse=True))
-_VOICE_LABEL_RE = re.compile(rf'^({_label_alts}|[SATB]\d+)(?=\s|\t|\|)')
+_VOICE_LABEL_RE = re.compile(rf'^({voice_label_alternation()}|[SATB]\d+)(?=\s|\t|\|)')
 
 
 def _extract_voice_label(line: str) -> tuple[str | None, str]:
@@ -326,28 +311,22 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
 
     # Validate left side: strip octave modifiers (' ,) then check for solfa token
     left_bare = left_str.rstrip(spec["octave"]["up_char"] + spec["octave"]["down_char"])
-    left_valid = any(left_bare == t for t in spec["notes"]["tokens_sorted"])
+    matched_left = match_solfa_token(left_bare)
+    left_valid = matched_left is not None and matched_left == left_bare
     if not left_valid:
         return None, beat_str, None
 
     # Parse the right side: consume solfa token + octave modifiers
     right_stripped = right_str.lstrip()
-    matched_right = None
-    for tok in spec["notes"]["tokens_sorted"]:
-        if right_stripped.startswith(tok):
-            matched_right = tok
-            break
+    matched_right = match_solfa_token(right_stripped)
     if matched_right is None:
         return None, beat_str, None
 
     # Consume octave modifiers (they're part of the modulation target,
     # e.g. s, means "sol octave down" - pitch class is the same but
     # we consume to avoid leaving a dangling comma)
-    pos = len(matched_right)
-    while pos < len(right_stripped) and right_stripped[pos] in (spec["octave"]["up_char"], spec["octave"]["down_char"]):
-        pos += 1
-
-    right_token = right_stripped[:pos]
+    trailing_mods, _ = consume_octave_modifiers(right_stripped[len(matched_right):])
+    right_token = matched_right + trailing_mods
     remaining = right_stripped  # right token is also the first note to play
 
     mod_str = f"{left_str}/{right_token}"
@@ -428,23 +407,7 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
 def _extract_voice_labels(s: str) -> list[str]:
     """Greedily extract concatenated voice labels from a string.
     E.g. 'SATB' → ['S','A','T','B'], 'S1S2T' → ['S1','S2','T']"""
-    labels = []
-    pos = 0
-    while pos < len(s):
-        matched = None
-        for lbl in sorted(spec["voices"]["voice_config"].keys(), key=len, reverse=True):  # sorted longest first
-            if s[pos:].startswith(lbl):
-                matched = lbl
-                break
-        if matched:
-            labels.append(matched)
-            pos += len(matched)
-        else:
-            break  # not a voice label, stop
-    # Only valid if we consumed the entire string
-    if pos == len(s) and labels:
-        return labels
-    return []
+    return extract_voice_label_sequence(s, spec["voices"]["voice_config"].keys())
 
 
 def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
@@ -477,17 +440,7 @@ def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
         parsed = False
 
         # Check for verse+voices (e.g. "1SA", "2B", "RS1S2") or verse/refrain only
-        vpart = ""
-        vlist = ""
-        if prefix.startswith("R"):
-            vpart = "R"
-            vlist = prefix[1:]
-        elif prefix[0].isdigit():
-            i = 0
-            while i < len(prefix) and prefix[i].isdigit():
-                i += 1
-            vpart = prefix[:i]
-            vlist = prefix[i:]
+        vpart, vlist = split_lyric_prefix(prefix)
 
         if vpart:
             if vpart == "R":
