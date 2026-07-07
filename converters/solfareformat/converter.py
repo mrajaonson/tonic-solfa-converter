@@ -56,6 +56,12 @@ def _align_block(note_lines: list[str]) -> list[str]:
 
     aligned = []
     for cells, seps in zip(cells_list, seps_list):
+        # A line that ends on a partial measure has no closing barline: its last
+        # separator has real content after it (e.g. "... | s : l"), so that
+        # separator needs a trailing space like any mid-line one, not the tight
+        # spacing reserved for a true closing pipe.
+        closes_with_barline = not cells[-1]
+
         parts = []
         for i, cell in enumerate(cells):
             parts.append(cell.ljust(max_widths[i]))
@@ -65,7 +71,7 @@ def _align_block(note_lines: list[str]) -> list[str]:
                 is_last  = (i == len(seps) - 1)
                 if is_first and not has_voice_label:
                     parts.append(c + ' ')        # '| ' - opening pipe, no leading space
-                elif is_last:
+                elif is_last and closes_with_barline:
                     parts.append(' ' + c)        # ' |' - closing pipe, no trailing space
                 else:
                     parts.append(' ' + c + ' ')  # ' : ' / ' ! ' / ' | '

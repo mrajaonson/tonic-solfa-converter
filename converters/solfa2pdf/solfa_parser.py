@@ -19,6 +19,11 @@ class TonicSolfaParser:
     def __init__(self):
         self.song = Song()
         self.current_measure_num = 0
+        # True when the previous block's voice lines ended on a trailing partial
+        # measure, meaning the next block may open with a continuation that
+        # completes that same (split) measure and shares its number.
+        self._prev_block_ended_trailing_partial = False
+        self._prev_trailing_beats = 0  # beat count of that trailing partial
 
     def parse(self, text: str) -> Song:
         """Parse the complete tonic solfa text"""
@@ -51,12 +56,12 @@ class TonicSolfaParser:
             if stripped.startswith('//'):
                 continue
 
-            # Check if it's a header property line (:PROP_NAME: value)
-            prefix = spec["header"]["prop_prefix"]
-            suffix = spec["header"]["prop_suffix"]
-            if stripped.startswith(prefix) and suffix in stripped[len(prefix):]:
-                self._parse_header_line(stripped)
-            else:
+            # Check if it's a header property line (:PROP_NAME: value).
+            # A note line whose first beat is empty (e.g. ": d | r : m | f")
+            # also starts with the prop_prefix ':', so _parse_header_line only
+            # consumes the line if the keyword is a known property - otherwise
+            # it's content and falls through to note parsing.
+            if not self._parse_header_line(stripped):
                 content_lines.append(line)
 
         # Parse content blocks
@@ -64,10 +69,20 @@ class TonicSolfaParser:
 
         return self.song
 
-    def _parse_header_line(self, line: str):
-        """Parse a header property line in :PROP_NAME: value format"""
+    def _parse_header_line(self, line: str) -> bool:
+        """Parse a header property line in :PROP_NAME: value format.
+
+        Returns True if the line was a recognized header property (and was
+        consumed), False otherwise. A note line whose first beat is empty
+        (e.g. ": d | r : m | f" with no leading barline) also starts with the
+        prop_prefix ':', so we only treat it as a header line when the text
+        between the two colons is a known property name.
+        """
         prefix = spec["header"]["prop_prefix"]
         suffix = spec["header"]["prop_suffix"]
+
+        if not line.startswith(prefix) or suffix not in line[len(prefix):]:
+            return False
 
         # Strip leading prefix, then split on suffix to get prop name and value
         rest = line[len(prefix):]
@@ -75,10 +90,10 @@ class TonicSolfaParser:
         prop = rest[:idx].strip()
         value = rest[idx + len(suffix):].strip()
 
-        # Skip unknown property names
+        # Skip unknown property names - could be note notation starting with ':'
         all_props = set(spec["header"]["string_props"]) | set(spec["header"]["int_props"]) | set(spec["header"]["special_props"]) | set(spec["header"]["flag_props"])
         if prop not in all_props:
-            return
+            return False
 
         if prop in set(spec["header"]["flag_props"]):
             if hasattr(self.song, prop):
@@ -104,6 +119,8 @@ class TonicSolfaParser:
                     self.song.time_sig = (int(num), int(denom))
                 except ValueError:
                     pass
+
+        return True
 
     def _parse_blocks(self, lines: List[str]):
         """Parse content into blocks of voice lines and lyrics"""
@@ -164,10 +181,9 @@ class TonicSolfaParser:
                 block.voice_lines.append(voice_line)
                 voice_labels_used.append(voice_line.voice_label)
 
-        # Update measure count
+        # Assign measure numbers across all voices and update the running count.
         if block.voice_lines:
-            num_measures = len(block.voice_lines[0].measures)
-            self.current_measure_num += num_measures
+            self._number_block_measures(block)
 
         # Parse lyrics
         for lyric_line in lyric_lines:
@@ -183,8 +199,11 @@ class TonicSolfaParser:
         voice_label = None
         notation = line
 
-        # Try to match voice label at start (e.g., "S1 |d:r:m:f|" or "S |d:r:m:f|")
-        label_match = re.match(rf'^({voice_label_alternation()}|[SATB]\d+)\s+(\|.*)$', line)
+        # Try to match voice label at start (e.g., "S1 |d:r:m:f|", "S |d:r:m:f|",
+        # or without a leading barline, "S1 d | r : m | f"). This is only called
+        # on lines already confirmed to contain a barline, so the notation after
+        # the label doesn't need to start with one.
+        label_match = re.match(rf'^({voice_label_alternation()}|[SATB]\d+)\s+(.+)$', line)
         if label_match:
             voice_label = label_match.group(1)
             notation = label_match.group(2)
@@ -197,15 +216,95 @@ class TonicSolfaParser:
 
         voice_line = VoiceLine(voice_label=voice_label)
 
+        # A boundary barline may be omitted only for a partial/pickup measure
+        # (fewer beats than the time signature). Track whether it was present at
+        # each edge so the first/last fragment can be treated accordingly.
+        barline = spec["rhythm"]["barline"]
+        trimmed = notation.strip()
+        if trimmed.endswith(spec["rhythm"]["double_barline"]):
+            trimmed_end = trimmed[:-2].rstrip()
+        else:
+            trimmed_end = trimmed
+        has_leading_barline = trimmed.startswith(barline)
+        has_trailing_barline = trimmed_end.endswith(barline)
+
         # Parse measures
         measures = self._split_into_measures(notation)
 
         for m_idx, measure_str in enumerate(measures):
-            measure = self._parse_measure(measure_str)
-            measure.number = self.current_measure_num + m_idx + 1
+            is_boundary_leading = m_idx == 0 and not has_leading_barline
+            is_boundary_trailing = m_idx == len(measures) - 1 and not has_trailing_barline
+            measure = self._parse_measure(measure_str, voice_label, is_boundary_leading, is_boundary_trailing)
+            # measure.number is assigned centrally in _parse_single_block so all
+            # voices share numbers and split measures count as one.
             voice_line.measures.append(measure)
 
         return voice_line
+
+    def _warn_if_full_boundary_measure(self, voice_label: str, position: str, num_beats: int, beats_per_measure: int):
+        """A measure without a barline at the line's edge is only valid as a
+        partial/pickup fragment. Warn (but still parse leniently) if it actually
+        has a full measure's worth of beats - it should have an explicit '|'."""
+        if num_beats >= beats_per_measure:
+            print(
+                f"Warning: voice '{voice_label}' has a {position} measure without a barline "
+                f"that contains a full measure ({num_beats} beats) - add an explicit '|' there."
+            )
+
+    def _number_block_measures(self, block: Block):
+        """Assign measure numbers to every voice in a block by index.
+
+        A block whose first measure is a leading partial completing the previous
+        block's trailing partial is a continuation: its first measure shares the
+        prior measure's number (the two halves of a split measure count as one).
+        Subsequent measures increment normally. The same numbers are applied to
+        every voice so they stay aligned.
+        """
+        ref_measures = block.voice_lines[0].measures
+        num_measures = len(ref_measures)
+
+        first = ref_measures[0] if ref_measures else None
+        continuation = (
+            self._prev_block_ended_trailing_partial
+            and first is not None
+            and first.is_partial
+            and first.partial_side == "leading"
+        )
+
+        numbers = []
+        n = self.current_measure_num
+        for m_idx in range(num_measures):
+            if m_idx == 0 and continuation:
+                numbers.append(n)  # complete the split measure - same number
+            else:
+                n += 1
+                numbers.append(n)
+        self.current_measure_num = n
+
+        # Warn if a split pair does not add up to a full measure.
+        if continuation:
+            total = self._prev_trailing_beats + len(first.beats)
+            beats_per_measure = self.song.time_sig[0]
+            if total != beats_per_measure:
+                print(
+                    f"Warning: split measure across a system break has {total} beats "
+                    f"(expected {beats_per_measure}) - check the partial measures at the break."
+                )
+
+        for voice_line in block.voice_lines:
+            for m_idx, measure in enumerate(voice_line.measures):
+                if m_idx < len(numbers):
+                    measure.number = numbers[m_idx]
+                    if m_idx == 0 and continuation:
+                        measure.is_continuation = True
+
+        last = ref_measures[-1] if ref_measures else None
+        if last is not None and last.is_partial and last.partial_side == "trailing":
+            self._prev_block_ended_trailing_partial = True
+            self._prev_trailing_beats = len(last.beats)
+        else:
+            self._prev_block_ended_trailing_partial = False
+            self._prev_trailing_beats = 0
 
     def _split_into_measures(self, notation: str) -> List[str]:
         """Split notation string into individual measures"""
@@ -224,8 +323,18 @@ class TonicSolfaParser:
 
         return measures
 
-    def _parse_measure(self, measure_str: str) -> Measure:
-        """Parse a single measure into beats"""
+    def _parse_measure(self, measure_str: str, voice_label: str = "",
+                       is_boundary_leading: bool = False, is_boundary_trailing: bool = False) -> Measure:
+        """Parse a single measure into beats.
+
+        is_boundary_leading/is_boundary_trailing mark a measure at the very
+        start/end of a line that has no barline there (e.g. "d | r : m | f").
+        Bare separators at that edge (before the first or after the last real
+        beat) are skip-markers for beats outside the partial fragment - not
+        real rest beats - so they are dropped rather than rendered. A boundary
+        fragment with fewer beats than the time signature is flagged is_partial
+        (rendered narrow); one that is actually full is warned about but kept.
+        """
         measure = Measure()
 
         if not measure_str:
@@ -245,6 +354,27 @@ class TonicSolfaParser:
 
         # Split into beats by ':'
         beat_strs = measure_str.split(beat_sep)
+
+        # Boundary fragments: strip bare edge beat-slots (skip-markers) and
+        # decide whether this is a narrow partial measure or a full one.
+        if is_boundary_leading or is_boundary_trailing:
+            if is_boundary_leading:
+                skipped = 0
+                while len(beat_strs) > 1 and not beat_strs[0].strip():
+                    beat_strs.pop(0)
+                    skipped += 1
+                if skipped and soft_barline_pos >= 0:
+                    soft_barline_pos = soft_barline_pos - skipped if soft_barline_pos > skipped else -1
+            if is_boundary_trailing:
+                while len(beat_strs) > 1 and not beat_strs[-1].strip():
+                    beat_strs.pop()
+            beats_per_measure = self.song.time_sig[0]
+            position = "leading" if is_boundary_leading else "trailing"
+            if len(beat_strs) < beats_per_measure:
+                measure.is_partial = True
+                measure.partial_side = position
+            else:
+                self._warn_if_full_boundary_measure(voice_label, position, len(beat_strs), beats_per_measure)
 
         # Check if all beats are empty (whole-measure rest)
         all_empty = all(not b.strip() or b.strip() == "" for b in beat_strs)

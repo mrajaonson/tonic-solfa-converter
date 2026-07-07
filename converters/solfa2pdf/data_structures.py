@@ -1,7 +1,7 @@
 from dataclasses import field
 from enum import Enum
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 class NoteType(Enum):
@@ -84,6 +84,9 @@ class Measure:
     number: int = 0
     is_empty: bool = False  # whole-measure rest
     soft_barline_after_beat: int = -1  # beat index after which to draw a thin courtesy barline (-1 = none)
+    is_partial: bool = False  # boundary-omitted pickup fragment (fewer beats than the time sig) - rendered narrow
+    partial_side: Optional[str] = None  # "leading" or "trailing" when is_partial
+    is_continuation: bool = False  # leading partial completing the previous system's trailing partial (shares its number)
 
     def display_text(self) -> str:
         """Return display text for this measure"""

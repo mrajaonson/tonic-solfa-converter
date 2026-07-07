@@ -6,6 +6,7 @@ from music21 import (
     duration, metadata, tie, repeat, expressions, dynamics, chord,
     articulations,
 )
+from music21.stream.enums import ShowNumber
 from ..shared import spec, nav_base as _nav_base, nav_number as _nav_number, navigation_display as _nav_display
 from music21 import instrument as m21instrument
 from .solfa_pitch import solfa_to_pitch, resolve_modulation
@@ -245,6 +246,17 @@ def build_score(parsed: dict) -> stream.Score:
     ts_num, ts_den = map(int, time_sig_str.split("/"))
     measure_ql = ts_num * (4.0 / ts_den)
 
+    # Does the piece end on an incomplete (trailing-partial) measure? Determined
+    # from the longest voice before padding, so the final barline is consistent
+    # across parts (a partial ending gets a plain barline, not the thick final).
+    piece_ends_incomplete = False
+    if voices:
+        _max_len = max(len(m) for m in voices.values())
+        piece_ends_incomplete = any(
+            len(m) == _max_len and m and m[-1].get("is_partial") and m[-1].get("partial_side") == "trailing"
+            for m in voices.values()
+        )
+
     # ── Pad voices to equal length ──
     # If some voices have fewer measures (partial blocks), pad with
     # whole-measure rests so all voices have the same total measures.
@@ -339,10 +351,18 @@ def build_score(parsed: dict) -> stream.Score:
             # Navigation: read from measure level (parser extracted it from events)
             measure_nav = measures_raw[m_idx].get("navigation") if m_idx < len(measures_raw) else None
 
+            # Partial/pickup measure: a boundary fragment shorter than a full
+            # measure. It keeps its assigned (short) durations and is marked
+            # incomplete so MuseScore reads it as an anacrusis rather than
+            # padding it out to a full bar.
+            is_partial = measures_raw[m_idx].get("is_partial") if m_idx < len(measures_raw) else False
+            partial_side = measures_raw[m_idx].get("partial_side") if m_idx < len(measures_raw) else None
+
             # Whole-measure rest detection:
             # all events are rests, OR no events at all
+            # (never collapse a partial measure to a full-measure rest)
             all_rests = all(te.event.is_rest for te in events) if events else True
-            if all_rests:
+            if all_rests and not is_partial:
                 r = note.Rest()
                 r.duration = duration.Duration(quarterLength=measure_ql)
                 r.fullMeasure = True
@@ -436,12 +456,30 @@ def build_score(parsed: dict) -> stream.Score:
                 for nav in nav_markers[m_idx]:
                     _apply_navigation_barline_only(m21_measure, nav)
 
+            # Mark a partial measure incomplete so it renders as a pickup:
+            # padding fills the "missing" beats (left for an anacrusis, right
+            # for a truncated final fragment) without adding printed rests.
+            if is_partial:
+                actual_ql = sum(el.duration.quarterLength for el in m21_measure.notesAndRests)
+                missing = measure_ql - actual_ql
+                if partial_side == "leading":
+                    if missing > 0:
+                        m21_measure.paddingLeft = missing
+                    # A leading pickup is a true anacrusis: mark it implicit so
+                    # no opening measure number / bar is shown (its boundary '|'
+                    # was intentionally omitted in the notation).
+                    m21_measure.showNumber = ShowNumber.NEVER
+                elif missing > 0:
+                    m21_measure.paddingRight = missing
+
             part.append(m21_measure)
 
         if part.getElementsByClass(stream.Measure):
             last_meas = part.getElementsByClass(stream.Measure)[-1]
             if not isinstance(last_meas.rightBarline, bar.Repeat):
-                last_meas.rightBarline = bar.Barline("final")
+                # A piece that ends on a partial measure has no final delimiter:
+                # use a plain barline instead of the thick "final" one.
+                last_meas.rightBarline = bar.Barline("regular" if piece_ends_incomplete else "final")
 
         score.append(part)
         is_first_part = False

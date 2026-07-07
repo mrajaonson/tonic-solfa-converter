@@ -21,7 +21,14 @@ def assign_durations(measures: list[dict], time_sig: str) -> list[list[TimedEven
         timed_events: list[TimedEvent] = []
         beats = meas["beats"]
         n_groups = len(beats) if beats else 1
-        group_ql = measure_ql / n_groups
+        # A partial/pickup measure (boundary barline omitted, fewer beats than
+        # the time signature) keeps each beat at its natural length instead of
+        # stretching the fragment across a full measure - so it stays short and
+        # renders as a proper incomplete measure downstream.
+        if meas.get("is_partial"):
+            group_ql = beat_ql
+        else:
+            group_ql = measure_ql / n_groups
 
         for beat_notes in beats:
             n_events = len(beat_notes)

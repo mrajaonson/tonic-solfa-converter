@@ -446,3 +446,161 @@ def test_consolidate_holds_hold_at_start_not_merged():
     measures = [[_te(is_hold=True, ql=1.0), _te(ql=1.0)]]
     result = consolidate_holds(measures)
     assert len(result[0]) == 2
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Partial (boundary-pipe-optional) measures
+# ──────────────────────────────────────────────────────────────────────
+
+def test_parse_voice_line_partial_flags():
+    label, measures = parse_voice_line("d | r : m : f : s | f", beats_per_measure=4)
+    assert [m["is_partial"] for m in measures] == [True, False, True]
+    assert measures[0]["partial_side"] == "leading"
+    assert measures[2]["partial_side"] == "trailing"
+
+
+def test_parse_voice_line_leading_colon_stripped():
+    # ": d" -> 1-beat partial (bare leading ':' is a skip-marker, not a rest)
+    label, measures = parse_voice_line(": d | r : m : f : s | f", beats_per_measure=4)
+    assert measures[0]["is_partial"]
+    assert len(measures[0]["beats"]) == 1
+
+
+def test_parse_voice_line_boundary_full_warns(capsys):
+    # 2/4: "d : r" is a full boundary fragment -> warn, not partial
+    label, measures = parse_voice_line("d : r | m : d | s : l", beats_per_measure=2)
+    assert all(not m["is_partial"] for m in measures)
+    assert "without a barline" in capsys.readouterr().out
+
+
+def test_parse_voice_line_no_beats_per_measure_is_backward_compatible():
+    # Without beats_per_measure the old behavior holds (no partial handling)
+    label, measures = parse_voice_line("| d:r:m:f | s:l:t:d' |")
+    assert all(not m.get("is_partial") for m in measures)
+
+
+def test_assign_durations_partial_is_short():
+    # 1-beat pickup in 4/4 is a quarter note (1.0 ql), not a whole note (4.0)
+    _, measures = parse_voice_line("d | r : m : f : s | f", beats_per_measure=4)
+    timed = assign_durations(measures, "4/4")
+    assert sum(te.quarter_length for te in timed[0]) == pytest.approx(1.0)
+    assert sum(te.quarter_length for te in timed[1]) == pytest.approx(4.0)
+    assert sum(te.quarter_length for te in timed[2]) == pytest.approx(1.0)
+
+
+def test_parse_header_disambiguates_colon_note_line():
+    # A note line starting with ':' must end the header, not be dropped as a prop
+    props, remaining = parse_header([":title: Song", ": d | r : m : f : s | f"])
+    assert props["title"] == "Song"
+    assert any(": d" in line for line in remaining)
+
+
+def test_build_score_partial_measures_are_pickups(tmp_path):
+    from music21 import stream
+    from converters.solfa2musicxml.solfa_parser import parse_file
+    from converters.solfa2musicxml.builder import build_score
+
+    src = tmp_path / "pickup.txt"
+    src.write_text(
+        ":title: Pickup\n:key: C\n:timesig: 4/4\n\n"
+        "d | r : m : f : s | l : t : d' : r' | m'\n",
+        encoding="utf-8",
+    )
+    part = build_score(parse_file(str(src))).parts[0]
+    ms = list(part.getElementsByClass(stream.Measure))
+    # leading pickup: short, padded on the left
+    assert ms[0].duration.quarterLength == pytest.approx(1.0)
+    assert ms[0].paddingLeft == pytest.approx(3.0)
+    # trailing pickup: short, padded on the right
+    assert ms[-1].duration.quarterLength == pytest.approx(1.0)
+    assert ms[-1].paddingRight == pytest.approx(3.0)
+    # full interior measures untouched
+    assert ms[1].duration.quarterLength == pytest.approx(4.0)
+
+
+def test_build_score_leading_pickup_is_implicit_anacrusis(tmp_path):
+    from music21 import stream
+    from music21.stream.enums import ShowNumber
+    from converters.solfa2musicxml.solfa_parser import parse_file
+    from converters.solfa2musicxml.builder import build_score
+
+    src = tmp_path / "anacrusis.txt"
+    src.write_text(
+        ":title: Anacrusis\n:key: G\n:timesig: 3/4\n\n"
+        "s.s | s : m : r | d : t, : d | s : r : m |\n",
+        encoding="utf-8",
+    )
+    ms = list(build_score(parse_file(str(src))).parts[0].getElementsByClass(stream.Measure))
+    # leading pickup is a true anacrusis (implicit="yes" on export)
+    assert ms[0].showNumber == ShowNumber.NEVER
+    # interior/full measures keep their numbering
+    assert ms[1].showNumber != ShowNumber.NEVER
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Measures split across system/block breaks
+# ──────────────────────────────────────────────────────────────────────
+
+def _split_src():
+    return (
+        ":title: Split\n:key: G\n:timesig: 3/4\n\n"
+        "| d : r : m | s : l\n\n"      # block 1 ends on 2-beat trailing partial
+        "f | m : r : d |\n"            # block 2 opens with 1-beat continuation
+    )
+
+
+def test_split_measures_joined_into_one_complete_bar(tmp_path):
+    from converters.solfa2musicxml.solfa_parser import parse_file
+    src = tmp_path / "split.txt"
+    src.write_text(_split_src(), encoding="utf-8")
+    voices = parse_file(str(src))["voices"]
+    measures = next(iter(voices.values()))
+    # 3 complete bars: full, joined(s:l + f), full
+    assert [len(m["beats"]) for m in measures] == [3, 3, 3]
+    assert all(not m.get("is_partial") for m in measures)
+
+
+def test_split_measure_full_duration(tmp_path):
+    from converters.solfa2musicxml.solfa_parser import parse_file
+    src = tmp_path / "split.txt"
+    src.write_text(_split_src(), encoding="utf-8")
+    measures = next(iter(parse_file(str(src))["voices"].values()))
+    timed = assign_durations(measures, "3/4")
+    assert [sum(te.quarter_length for te in tm) for tm in timed] == [
+        pytest.approx(3.0), pytest.approx(3.0), pytest.approx(3.0)
+    ]
+
+
+def test_split_measure_builds_three_measures(tmp_path):
+    from music21 import stream
+    from converters.solfa2musicxml.solfa_parser import parse_file
+    from converters.solfa2musicxml.builder import build_score
+    src = tmp_path / "split.txt"
+    src.write_text(_split_src(), encoding="utf-8")
+    ms = list(build_score(parse_file(str(src))).parts[0].getElementsByClass(stream.Measure))
+    assert [m.number for m in ms] == [1, 2, 3]
+    assert [m.duration.quarterLength for m in ms] == [3.0, 3.0, 3.0]
+
+
+def test_split_measure_mismatch_warns(tmp_path, capsys):
+    from converters.solfa2musicxml.solfa_parser import parse_file
+    # trailing 2 + leading 2 = 4 beats in 3/4 → warn
+    src = tmp_path / "bad.txt"
+    src.write_text(
+        ":key: G\n:timesig: 3/4\n\n| d : r : m | s : l\n\nf : m | r : d : m |\n",
+        encoding="utf-8",
+    )
+    parse_file(str(src))
+    assert "split across a system break" in capsys.readouterr().out
+
+
+def test_incomplete_ending_uses_regular_barline(tmp_path):
+    from music21 import stream, bar
+    from converters.solfa2musicxml.solfa_parser import parse_file
+    from converters.solfa2musicxml.builder import build_score
+    # trailing partial at the very end (no continuation) stays incomplete
+    src = tmp_path / "end.txt"
+    src.write_text(":key: G\n:timesig: 3/4\n\n| d : r : m | s : l\n", encoding="utf-8")
+    ms = list(build_score(parse_file(str(src))).parts[0].getElementsByClass(stream.Measure))
+    assert ms[-1].paddingRight == pytest.approx(1.0)
+    assert ms[-1].rightBarline.type == "regular"

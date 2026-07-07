@@ -38,23 +38,35 @@ def parse_header(lines: list[str]) -> tuple[dict, list[str]]:
             remaining.append(line)
             continue
         if not header_done and stripped:
-            # Match :PROP: value format
+            # Match :PROP: value format. A note line whose first beat is empty
+            # (e.g. ": d | r : m | f" with no leading barline) also starts with
+            # the prop_prefix ':', so we can't rely on that prefix alone: a real
+            # header keyword is a single bare word, whereas a colon-led measure's
+            # "keyword" slice contains a barline and/or whitespace from the
+            # surrounding notation. Unknown-but-word-shaped keywords are still
+            # skipped silently (keeps the header open for later genuine props);
+            # anything notation-shaped ends the header section as content.
+            is_header_line = False
             if stripped.startswith(prefix) and suffix in stripped[len(prefix):]:
                 rest = stripped[len(prefix):]
                 idx = rest.index(suffix)
                 keyword = rest[:idx].strip()
                 value = rest[idx + len(suffix):].strip()
 
-                if keyword not in _HEADER_KEYWORDS:
-                    continue  # unknown prop, skip silently
+                barline = spec["rhythm"]["barline"]
+                looks_like_keyword = bool(keyword) and barline not in keyword and not any(c.isspace() for c in keyword)
+                if looks_like_keyword:
+                    is_header_line = True
+                    if keyword in _HEADER_INT_PROPS:
+                        try:
+                            props[keyword] = int(value)
+                        except ValueError:
+                            pass
+                    elif keyword in _HEADER_KEYWORDS:
+                        props[keyword] = value
+                    # else: unrecognized but word-shaped - skip silently
 
-                if keyword in _HEADER_INT_PROPS:
-                    try:
-                        props[keyword] = int(value)
-                    except ValueError:
-                        pass
-                else:
-                    props[keyword] = value
+            if is_header_line:
                 continue
             else:
                 header_done = True
@@ -335,20 +347,68 @@ def _detect_modulation(beat_str: str) -> tuple[str | None, str, str | None]:
     return mod_str, remaining, key_change
 
 
-def parse_voice_line(line: str) -> tuple[str | None, list]:
-    """Parse one note line into (voice_label, list_of_measures)."""
+def _warn_if_full_boundary_measure(voice_label: str | None, position: str,
+                                   num_beats: int, beats_per_measure: int) -> None:
+    """A measure without a barline at the line's edge is only valid as a
+    partial/pickup fragment. Warn (but still parse leniently) if it actually
+    has a full measure's worth of beats - it should have an explicit '|'."""
+    if num_beats >= beats_per_measure:
+        print(
+            f"Warning: voice '{voice_label or '?'}' has a {position} measure without a barline "
+            f"that contains a full measure ({num_beats} beats) - add an explicit '|' there."
+        )
+
+
+def parse_voice_line(line: str, beats_per_measure: int | None = None) -> tuple[str | None, list]:
+    """Parse one note line into (voice_label, list_of_measures).
+
+    A boundary barline may be omitted only for a partial/pickup measure (fewer
+    beats than the time signature). When *beats_per_measure* is given, the first
+    measure of a line with no leading '|' (and the last with no trailing '|')
+    has its bare edge beat-slots stripped (skip-markers, not rests) and is
+    flagged ``is_partial`` when short, or warned about when actually full.
+    """
     label, content = _extract_voice_label(line)
-    raw_measures = _split_measures(content)
+
+    # Detect boundary barlines before _split_measures strips them.
+    barline = spec["rhythm"]["barline"]
+    trimmed = content.strip()
+    trimmed_end = (trimmed[:-2].rstrip()
+                   if trimmed.endswith(spec["rhythm"]["double_barline"]) else trimmed)
+    has_leading_barline = trimmed.startswith(barline)
+    has_trailing_barline = trimmed_end.endswith(barline)
+
+    raw_measures = [m.strip() for m in _split_measures(content)]
+    raw_measures = [m for m in raw_measures if m]
+    last_idx = len(raw_measures) - 1
 
     measures = []
     for mstr in raw_measures:
-        mstr = mstr.strip()
-        if not mstr:
-            continue
+        m_pos = len(measures)  # index this measure will occupy
+        is_boundary_leading = (m_pos == 0 and not has_leading_barline)
+        is_boundary_trailing = (m_pos == last_idx and not has_trailing_barline)
 
         # Soft barline is purely visual - treat as beat separator
         mstr = mstr.replace(spec["rhythm"]["soft_barline"]["char"], spec["rhythm"]["beat_separator"])
         beats_raw = mstr.split(spec["rhythm"]["beat_separator"])
+
+        # Boundary fragments: strip bare edge beat-slots (skip-markers) and
+        # decide whether this is a narrow partial measure or a full one.
+        is_partial = False
+        partial_side = None
+        if beats_per_measure is not None and (is_boundary_leading or is_boundary_trailing):
+            if is_boundary_leading:
+                while len(beats_raw) > 1 and not beats_raw[0].strip():
+                    beats_raw.pop(0)
+            if is_boundary_trailing:
+                while len(beats_raw) > 1 and not beats_raw[-1].strip():
+                    beats_raw.pop()
+            position = "leading" if is_boundary_leading else "trailing"
+            if len(beats_raw) < beats_per_measure:
+                is_partial = True
+                partial_side = position
+            else:
+                _warn_if_full_boundary_measure(label, position, len(beats_raw), beats_per_measure)
         beats = []
         modulations = []
         key_changes = []
@@ -395,6 +455,8 @@ def parse_voice_line(line: str) -> tuple[str | None, list]:
             "modulations": modulations,
             "key_changes": key_changes,
             "navigation": measure_navs if measure_navs else None,
+            "is_partial": is_partial,
+            "partial_side": partial_side,
         })
 
     return label, measures
@@ -524,6 +586,58 @@ def _make_rest_measure(beats_per_measure: int) -> dict:
     }
 
 
+def _merge_navigation(a, b):
+    """Combine two measure-level navigation values (each None or a list)."""
+    items = []
+    for nav in (a, b):
+        if nav:
+            items += nav if isinstance(nav, list) else [nav]
+    return items or None
+
+
+def _join_split_measures(voice_data: dict, beats_per_measure: int) -> None:
+    """Join a trailing-partial measure with the immediately following
+    leading-partial measure (same voice) into one complete measure - the two
+    halves of a measure split across a system/block break. Mutates voice_data.
+
+    The first block's leading partial (anacrusis) and the last block's trailing
+    partial (incomplete ending) have no adjacent complement, so they are left
+    untouched. A pair whose beats don't sum to a full measure is warned about
+    but still merged (lenient).
+    """
+    for label, measures in voice_data.items():
+        merged = []
+        i = 0
+        n = len(measures)
+        while i < n:
+            cur = measures[i]
+            nxt = measures[i + 1] if i + 1 < n else None
+            if (cur.get("partial_side") == "trailing"
+                    and nxt is not None
+                    and nxt.get("partial_side") == "leading"):
+                combined = {
+                    "beats": cur["beats"] + nxt["beats"],
+                    "modulations": cur.get("modulations", []) + nxt.get("modulations", []),
+                    "key_changes": cur.get("key_changes", []) + nxt.get("key_changes", []),
+                    "navigation": _merge_navigation(cur.get("navigation"), nxt.get("navigation")),
+                    "is_partial": False,
+                    "partial_side": None,
+                }
+                total_beats = len(combined["beats"])
+                if total_beats != beats_per_measure:
+                    print(
+                        f"Warning: voice '{label}' has a measure split across a system break "
+                        f"with {total_beats} beats (expected {beats_per_measure}) - "
+                        f"check the partial measures at the break."
+                    )
+                merged.append(combined)
+                i += 2
+            else:
+                merged.append(cur)
+                i += 1
+        voice_data[label] = merged
+
+
 def parse_file(filepath: str) -> dict:
     """
     Parse a tonic solfa .txt file.
@@ -570,7 +684,7 @@ def parse_file(filepath: str) -> dict:
         # ── Parse this block's voices ──
         block_voices: dict[str, list] = {}
         for i, line in enumerate(note_lines):
-            label, measures = parse_voice_line(line)
+            label, measures = parse_voice_line(line, beats_per_measure)
             if label is None:
                 label = default_voice_order[i] if i < len(default_voice_order) else f"V{i + 1}"
             block_voices[label] = measures
@@ -606,6 +720,9 @@ def parse_file(filepath: str) -> dict:
                 if verse_id not in lyrics_data[target]:
                     lyrics_data[target][verse_id] = []
                 lyrics_data[target][verse_id].extend(syllables)
+
+    # Join measures split across system/block breaks into single complete bars.
+    _join_split_measures(voice_data, beats_per_measure)
 
     return {
         "properties": props,

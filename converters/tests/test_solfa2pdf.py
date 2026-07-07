@@ -291,8 +291,11 @@ class TestParseVoiceLine:
         assert vl.voice_label == "S1"
 
     def test_measure_numbers_increment(self):
+        # Numbering is assigned centrally per block (so all voices share numbers
+        # and split measures count once), not inside _parse_voice_line.
         self.p.current_measure_num = 4
-        vl = self.p._parse_voice_line("| d:r:m:f | s:l:t:d' |", 0, 1)
+        block = self.p._parse_single_block(["| d:r:m:f | s:l:t:d' |"])
+        vl = block.voice_lines[0]
         assert vl.measures[0].number == 5
         assert vl.measures[1].number == 6
 
@@ -480,3 +483,125 @@ words here
 """
         song = _parse(text)
         assert len(song.blocks) == 1
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Partial (boundary-pipe-optional) measures
+# ──────────────────────────────────────────────────────────────────────
+
+class TestPartialMeasures:
+    def _voice(self, text):
+        song = _parse(text)
+        return song.blocks[0].voice_lines[0]
+
+    def test_leading_and_trailing_partial(self):
+        # 4/4 default: "d" and "f" are 1-beat pickup fragments, middle is full
+        vl = self._voice("d | r : m : f : s | f")
+        assert [m.is_partial for m in vl.measures] == [True, False, True]
+        assert [len(m.beats) for m in vl.measures] == [1, 4, 1]
+
+    def test_no_partial_when_fully_piped(self):
+        vl = self._voice("| d : r : m : f | s : l : t : d' |")
+        assert all(not m.is_partial for m in vl.measures)
+
+    def test_leading_empty_beat_is_skip_marker(self):
+        # ": d" starts on a later beat - the bare leading ':' is stripped,
+        # leaving a 1-beat partial rather than an empty rest beat.
+        vl = self._voice(": d | r : m : f : s | f")
+        assert vl.measures[0].is_partial
+        assert len(vl.measures[0].beats) == 1
+        assert vl.measures[0].display_text() == "d"
+
+    def test_line_not_dropped_when_starting_with_colon(self):
+        # Regression: a note line starting with ':' must not be swallowed as a
+        # header property line.
+        song = _parse(": d | r : m : f : s | f")
+        assert len(song.blocks) == 1
+        assert song.blocks[0].voice_lines
+
+    def test_boundary_but_full_warns_and_stays_full(self, capsys):
+        # 2/4: a boundary fragment with 2 beats is a full measure - warn, keep full
+        vl = self._voice(":timesig: 2/4\n\nd : r | m : d | s : l")
+        assert all(not m.is_partial for m in vl.measures)
+        out = capsys.readouterr().out
+        assert "without a barline" in out
+
+    def test_explicit_label_without_leading_pipe(self):
+        song = _parse("S1 d | r : m : f : s | f")
+        vl = song.blocks[0].voice_lines[0]
+        assert vl.voice_label == "S1"
+        assert vl.measures[0].is_partial
+
+
+class _RecordingCanvas:
+    """Minimal reportlab-canvas stand-in that records drawn lines."""
+    def __init__(self):
+        self.lines = []
+
+    def line(self, x0, y0, x1, y1):
+        self.lines.append((x0, y0, x1, y1))
+
+    def stringWidth(self, text, font, size):
+        return len(text) * size * 0.5
+
+    def drawString(self, *a, **k): pass
+    def drawCentredString(self, *a, **k): pass
+    def drawRightString(self, *a, **k): pass
+    def setFont(self, *a, **k): pass
+    def setFillColor(self, *a, **k): pass
+    def setStrokeColor(self, *a, **k): pass
+    def setLineWidth(self, *a, **k): pass
+    def showPage(self, *a, **k): pass
+    def save(self, *a, **k): pass
+
+
+def _render_vertical_barline_count(text):
+    from converters.solfa2pdf.solfa_pdf_renderer import TonicSolfaPDFRenderer
+    song = _parse(text)
+    r = TonicSolfaPDFRenderer(song, "/dev/null")
+    r.c = _RecordingCanvas()
+    r._draw_page_header()
+    r._draw_song_header()
+    r._draw_all_blocks()
+    # vertical barlines have x0 == x1
+    return sum(1 for (x0, _y0, x1, _y1) in r.c.lines if abs(x0 - x1) < 1e-6)
+
+
+class TestLeadingPickupBarline:
+    def test_leading_partial_omits_opening_barline(self):
+        # Same music, with vs without the leading '|'. The partial (no pipe)
+        # version must draw exactly one fewer vertical barline (the opening one).
+        with_pipe = _render_vertical_barline_count("| d | r : m : f : s | l : t : d' : r' |")
+        no_pipe = _render_vertical_barline_count("d | r : m : f : s | l : t : d' : r' |")
+        assert no_pipe == with_pipe - 1
+
+    def test_trailing_partial_omits_closing_barline(self):
+        # Same music, with vs without the trailing '|'. Dropping it makes the
+        # last measure a trailing partial, which draws no closing barline at all
+        # (the piped version's closing delimiter here is a double barline = two
+        # vertical lines, so removing it drops two lines).
+        with_pipe = _render_vertical_barline_count(":timesig: 3/4\n\n| d : r : m | s : l |")
+        no_pipe = _render_vertical_barline_count(":timesig: 3/4\n\n| d : r : m | s : l")
+        assert no_pipe == with_pipe - 2
+
+
+class TestSplitMeasureAcrossSystems:
+    SRC = ":timesig: 3/4\n\n| d : r : m | s : l\n\nf | m : r : d |"
+
+    def test_split_halves_share_one_number(self):
+        song = _parse(self.SRC)
+        b0 = song.blocks[0].voice_lines[0].measures
+        b1 = song.blocks[1].voice_lines[0].measures
+        # block 0: full(#1), trailing partial "s:l"(#2)
+        assert [m.number for m in b0] == [1, 2]
+        assert b0[-1].is_partial and b0[-1].partial_side == "trailing"
+        # block 1: continuation "f"(#2, same as the trailing half), full(#3)
+        assert b1[0].number == 2
+        assert b1[0].is_partial and b1[0].partial_side == "leading"
+        assert b1[0].is_continuation
+        assert b1[1].number == 3
+
+    def test_split_mismatch_warns(self, capsys):
+        # 3/4: trailing 2 beats + leading 2 beats = 4 (≠ 3) → warn
+        _parse(":timesig: 3/4\n\n| d : r : m | s : l\n\nf : m | r : d : m |")
+        assert "split measure" in capsys.readouterr().out

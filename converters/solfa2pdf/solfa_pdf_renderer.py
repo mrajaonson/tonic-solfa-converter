@@ -276,19 +276,23 @@ class TonicSolfaPDFRenderer:
         # Find the widest line across the entire song, center it, and use that
         # start_x for every line and the notes section — so all lines are left-aligned
         # relative to each other, with the widest one centered on the page.
-        max_line_measures = 0
+        # Widths are summed from actual per-measure widths so lines with narrow
+        # partial (pickup) measures are accounted for correctly.
+        max_line_width = 0.0
         for block in self.song.blocks:
             if not block.voice_lines:
                 continue
-            n = len(block.voice_lines[0].measures)
+            ref_measures = block.voice_lines[0].measures
+            n = len(ref_measures)
             idx = 0
             while idx < n:
                 end = min(idx + self.measures_per_line, n)
-                max_line_measures = max(max_line_measures, end - idx)
+                line_width = sum(self._measure_width_for(ref_measures[m]) for m in range(idx, end))
+                max_line_width = max(max_line_width, line_width)
                 idx = end
-        if max_line_measures == 0:
-            max_line_measures = self.measures_per_line
-        widest_content = self._voice_label_width + max_line_measures * self._measure_width
+        if max_line_width == 0:
+            max_line_width = self.measures_per_line * self._measure_width
+        widest_content = self._voice_label_width + max_line_width
         self._block_start_x = self.margin_left + (self.content_width - widest_content) / 2
 
         # Render each block independently
@@ -333,15 +337,16 @@ class TonicSolfaPDFRenderer:
     # Note center X computation (shared by fermatas, key changes, lyrics)
     # ─────────────────────────────────────────────────────────────────
 
-    def _compute_note_center_x_full(self, m_idx: int, start_idx: int,
+    def _compute_note_center_x_full(self, measure_offset: float,
                                     beat_idx: int, note_idx: int, note: Note,
                                     beat: Beat, num_beats: int,
                                     start_x: float, label_width: float,
                                     measure_width: float) -> float:
         """Compute the center X for a specific note in a measure.
         Uses the same centering logic as lyric syllable placement so that
-        fermatas, key changes, etc. are centered exactly over their note."""
-        rel_m = m_idx - start_idx
+        fermatas, key changes, etc. are centered exactly over their note.
+        ``measure_offset`` is the measure's x-offset within the line (relative
+        to the start of the content area), which varies with partial measures."""
         beat_width = measure_width / num_beats if num_beats > 0 else measure_width
 
         if beat.is_subdivided:
@@ -351,7 +356,7 @@ class TonicSolfaPDFRenderer:
                 num_in_half = len(beat.first_half)
                 note_width = half_width / num_in_half if num_in_half > 0 else half_width
                 center_x = (start_x + label_width +
-                            rel_m * measure_width +
+                            measure_offset +
                             beat_idx * beat_width +
                             idx_in_half * note_width +
                             note_width / 2)
@@ -360,7 +365,7 @@ class TonicSolfaPDFRenderer:
                 num_in_half = len(beat.second_half)
                 note_width = half_width / num_in_half if num_in_half > 0 else half_width
                 center_x = (start_x + label_width +
-                            rel_m * measure_width +
+                            measure_offset +
                             beat_idx * beat_width +
                             half_width +
                             idx_in_half * note_width +
@@ -368,7 +373,7 @@ class TonicSolfaPDFRenderer:
             else:
                 # Fallback: center of beat
                 center_x = (start_x + label_width +
-                            rel_m * measure_width +
+                            measure_offset +
                             beat_idx * beat_width +
                             beat_width / 2)
         else:
@@ -376,7 +381,7 @@ class TonicSolfaPDFRenderer:
             num_notes = len(all_notes)
             note_width = beat_width / num_notes if num_notes > 0 else beat_width
             center_x = (start_x + label_width +
-                        rel_m * measure_width +
+                        measure_offset +
                         beat_idx * beat_width +
                         note_idx * note_width +
                         note_width / 2)
@@ -386,6 +391,34 @@ class TonicSolfaPDFRenderer:
     # ─────────────────────────────────────────────────────────────────
     # Draw a group of measures (one line of the score)
     # ─────────────────────────────────────────────────────────────────
+
+    def _measure_width_for(self, measure: Measure) -> float:
+        """Width of a single measure. A partial (pickup) measure is narrowed so
+        each of its beats matches a full-measure beat; full measures keep the
+        standard column width."""
+        full_w = self._measure_width
+        num = self.song.time_sig[0] if self.song.time_sig else 4
+        if measure is not None and measure.is_partial and num > 0:
+            return max(1, len(measure.beats)) * full_w / num
+        return full_w
+
+    def _line_measure_geometry(self, all_voice_data: Dict, voice_order: List[str],
+                               start_idx: int, end_idx: int) -> Dict[int, Tuple[float, float]]:
+        """Return {m_idx: (offset, width)} for measures in [start_idx, end_idx).
+
+        Widths use the reference (first) voice so all voices, barlines, measure
+        numbers, and lyrics share one horizontal grid. Offsets are relative to
+        the start of the measure-content area (i.e. after the label width)."""
+        ref_voice = voice_order[0] if voice_order else None
+        ref_measures = all_voice_data.get(ref_voice, []) if ref_voice else []
+        geo: Dict[int, Tuple[float, float]] = {}
+        offset = 0.0
+        for m_idx in range(start_idx, end_idx):
+            measure = ref_measures[m_idx] if m_idx < len(ref_measures) else None
+            width = self._measure_width_for(measure)
+            geo[m_idx] = (offset, width)
+            offset += width
+        return geo
 
     def _draw_measure_group(self, all_voice_data: Dict, voice_order: List[str],
                             start_idx: int, end_idx: int, block_lyrics: List[Dict]):
@@ -397,7 +430,9 @@ class TonicSolfaPDFRenderer:
 
         # Use globally-consistent widths (computed once in _draw_all_blocks)
         voice_label_width = self._voice_label_width
-        measure_width = self._measure_width
+
+        # Per-measure geometry (partial pickup measures render narrower)
+        geo = self._line_measure_geometry(all_voice_data, voice_order, start_idx, end_idx)
 
         # All lines in a block share the same start_x (set per-block in _draw_all_blocks)
         start_x = self._block_start_x
@@ -406,7 +441,7 @@ class TonicSolfaPDFRenderer:
         # ── Collect ALL above-staff markers into a unified list ──
         above_staff_items = self._collect_all_above_staff_items(
             all_voice_data, voice_order, start_idx, end_idx,
-            start_x, voice_label_width, measure_width
+            start_x, voice_label_width, geo
         )
 
         # Draw all above-staff markers on the SAME line if any exist
@@ -421,12 +456,14 @@ class TonicSolfaPDFRenderer:
         ref_voice = voice_order[0] if voice_order else None
         ref_measures = all_voice_data.get(ref_voice, []) if ref_voice else []
         for m_idx in range(start_idx, end_idx):
-            if m_idx < len(ref_measures) and ref_measures[m_idx].number:
-                measure_num = ref_measures[m_idx].number
-            else:
-                measure_num = m_idx + 1
-            self.c.drawString(x + 1, start_y + 1, str(measure_num))
-            x += measure_width
+            ref_m = ref_measures[m_idx] if m_idx < len(ref_measures) else None
+            # A continuation (the leading half of a split measure) shares the
+            # number of the trailing half already shown on the previous system,
+            # so don't print it again.
+            if ref_m is None or not ref_m.is_continuation:
+                measure_num = ref_m.number if (ref_m is not None and ref_m.number) else m_idx + 1
+                self.c.drawString(x + 1, start_y + 1, str(measure_num))
+            x += geo[m_idx][1]
         self.c.setFillColor(colors.black)
         start_y -= 2
 
@@ -449,16 +486,31 @@ class TonicSolfaPDFRenderer:
         self.c.setStrokeColor(colors.black)
 
         x = start_x + voice_label_width
-        # Left barline
-        self.c.setLineWidth(0.5)
-        self.c.line(x, barline_top_y, x, barline_bottom_y)
+        # Left (opening) barline - omitted when the line begins with a leading
+        # partial/pickup measure, since its boundary '|' was intentionally left
+        # out of the notation.
+        first_is_leading_partial = (
+            start_idx == 0
+            and start_idx < len(ref_measures)
+            and ref_measures[start_idx].is_partial
+        )
+        if not first_is_leading_partial:
+            self.c.setLineWidth(0.5)
+            self.c.line(x, barline_top_y, x, barline_bottom_y)
 
         # Barlines after each measure
         bx = x
         total_voice_measures = max(len(all_voice_data.get(v, [])) for v in voice_order) if voice_order else 0
         for m_idx in range(start_idx, end_idx):
-            bx += measure_width
+            bx += geo[m_idx][1]
             is_last_measure = (m_idx == total_voice_measures - 1)
+
+            # A trailing partial has no closing barline: either its measure
+            # continues on the next system (split measure) or it is a genuinely
+            # incomplete final bar. Mirror of the opening-barline skip above.
+            ref_m = ref_measures[m_idx] if m_idx < len(ref_measures) else None
+            if ref_m is not None and ref_m.is_partial and ref_m.partial_side == "trailing":
+                continue
 
             if is_last_measure:
                 # Double barline at end
@@ -486,15 +538,15 @@ class TonicSolfaPDFRenderer:
             for m_idx in range(start_idx, end_idx):
                 if m_idx < len(measures):
                     measure = measures[m_idx]
-                    self._draw_measure_content(measure, x, y, measure_width, self.voice_row_height)
-                x += measure_width
+                    self._draw_measure_content(measure, x, y, geo[m_idx][1], self.voice_row_height)
+                x += geo[m_idx][1]
 
             y -= self.voice_row_height
 
             # Draw lyrics for this voice if any
             if voice_label in lyrics_by_target_voice:
                 for lyric_info in lyrics_by_target_voice[voice_label]:
-                    self._draw_single_lyric_line(start_x, y, voice_label_width, measure_width,
+                    self._draw_single_lyric_line(start_x, y, voice_label_width, geo,
                                                  start_idx, end_idx, lyric_info, all_voice_data, voice_order)
                     y -= (self.lyric_row_height + self.lyric_bottom_margin)
 
@@ -508,7 +560,7 @@ class TonicSolfaPDFRenderer:
     def _collect_all_above_staff_items(self, all_voice_data: Dict, voice_order: List[str],
                                        start_idx: int, end_idx: int,
                                        start_x: float, label_width: float,
-                                       measure_width: float) -> List[Dict]:
+                                       geo: Dict[int, Tuple[float, float]]) -> List[Dict]:
         """Collect ALL above-staff items (dynamics, hairpins, text expressions, fermatas,
         navigation markers, key changes) from the first voice, grouped by note position.
         Each item has 'center_x', 'order' (notation order), and 'texts' (list of display strings)."""
@@ -547,9 +599,10 @@ class TonicSolfaPDFRenderer:
                         # Compute center_x using first voice's beat for consistent alignment
                         ref_notes = ref_beat.all_notes()
                         ref_note = ref_notes[note_idx] if note_idx < len(ref_notes) else note
+                        m_offset, m_width = geo.get(m_idx, (0.0, self._measure_width))
                         center_x = self._compute_note_center_x_full(
-                            m_idx, start_idx, beat_idx, note_idx, ref_note,
-                            ref_beat, num_beats, start_x, label_width, measure_width
+                            m_offset, beat_idx, note_idx, ref_note,
+                            ref_beat, num_beats, start_x, label_width, m_width
                         )
                         key = (m_idx, beat_idx, note_idx)
 
@@ -995,7 +1048,7 @@ class TonicSolfaPDFRenderer:
     # ─────────────────────────────────────────────────────────────────
 
     def _draw_single_lyric_line(self, start_x: float, y: float,
-                                label_width: float, measure_width: float,
+                                label_width: float, geo: Dict[int, Tuple[float, float]],
                                 start_idx: int, end_idx: int,
                                 lyric_info: Dict,
                                 all_voice_data: Dict, voice_order: List[str]):
@@ -1038,6 +1091,7 @@ class TonicSolfaPDFRenderer:
 
             measure = ref_measures[m_idx]
             num_beats = len(measure.beats)
+            m_offset, measure_width = geo.get(m_idx, (0.0, self._measure_width))
             beat_width = measure_width / num_beats if num_beats > 0 else measure_width
 
             for beat_idx, beat in enumerate(measure.beats):
@@ -1056,8 +1110,7 @@ class TonicSolfaPDFRenderer:
                     dot_w = self.c.stringWidth(".", self.notation_font, self.note_font_size)
                     total_content = first_tw + dot_w + second_tw
 
-                    rel_m = m_idx - start_idx
-                    beat_x = start_x + label_width + rel_m * measure_width + beat_idx * beat_width
+                    beat_x = start_x + label_width + m_offset + beat_idx * beat_width
                     content_x = beat_x + (beat_width - total_content) / 2
 
                     # First half: notes packed from content_x over first_tw
@@ -1096,10 +1149,9 @@ class TonicSolfaPDFRenderer:
                             if syllable_idx < len(lyric.syllables):
                                 syl = lyric.syllables[syllable_idx]
                                 if syl != "*":
-                                    rel_m = m_idx - start_idx
                                     note_width = beat_width / num_notes_in_beat
                                     note_center_x = (start_x + label_width +
-                                                     rel_m * measure_width +
+                                                     m_offset +
                                                      beat_idx * beat_width +
                                                      note_idx * note_width +
                                                      note_width / 2)

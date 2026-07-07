@@ -191,6 +191,13 @@ def test_align_block_incompatible_separators_passthrough():
     ]
     assert _align_block(lines) == lines
 
+def test_align_block_trailing_partial_keeps_space_after_last_separator():
+    # A line ending on a partial measure (no closing '|') must keep a space
+    # after its final ':' - it is not a closing pipe.
+    result = _align_block(["| d : r : m | s : l"])
+    assert result == ["| d : r : m | s : l"]
+    assert " : l" in result[0] and ":l" not in result[0]
+
 def test_align_block_voice_label_prefix():
     lines = [
         "S | d : m |",
