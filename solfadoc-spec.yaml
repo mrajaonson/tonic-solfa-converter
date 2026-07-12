@@ -346,21 +346,31 @@ lyrics:
   instrument_in_prefix_policy: "error"  # PR/PL in lyrics prefix → HARD ERROR
 
   # Prefix grammar:
-  #   prefix  := (verse?) (voices?)
-  #   verse   := [0-9]+  |  R
-  #   voices  := (voice)*
-  #   voice   := [SATB][0-9]*
+  #   A lyric prefix is a PARENTHESIZED token at the START of the line: (PREFIX)
+  #   Everything after the ')' (and optional space) is the lyrics text.
+  #   Anything NOT wrapped in parentheses is literal lyric text.
   #
-  # The prefix is the FIRST space-delimited token on the line.
-  # Everything after the first space is the lyrics text.
-  # Prefix order: verse/R always FIRST, then voice labels.
+  #   PREFIX := verse | R | voices | (verse | R) '.' voices
+  #   verse  := [0-9]+
+  #   voices := (voice)+     voice := [SATB][0-9]?
+  #
+  #   Verse and voices combine ONLY with the '.' separator (1.SA), never
+  #   concatenated (1SA is invalid → the whole line is treated as lyric text).
+  #   Examples: (SA)=v1 S+A ; (1.SAT)=v1 S+A+T ; (R.TB)=refrain T+B ; (2)=verse 2 all
+  #
+  #   Unprefixed lines are all voices; their verse number is the line's POSITION
+  #   among the unprefixed lyric lines in the block (1st = verse 1, 2nd = verse 2,
+  #   ...; resets per block). A voices-only prefix like (SA) is verse 1 and does
+  #   not consume a positional slot.
+  verse_voice_separator: "."
+  prefix_delimiters: { open: "(", close: ")" }
   #
   # Defaults when prefix is absent or partial:
   prefix_defaults:
-    no_prefix:      { verse: 1, voices: "all" }   # "Amazing grace" → verse 1, all voices
-    verse_only:     { voices: "all" }              # "2 'Twas"       → verse 2, all voices
-    refrain_only:   { voices: "all" }              # "R Praise God"  → refrain, all voices
-    voices_only:    { verse: 1 }                   # "SA Amazing"    → verse 1, S+A
+    no_prefix:      { voices: "all" }              # "Amazing grace" → all voices, positional verse
+    verse_only:     { voices: "all" }              # "(2) 'Twas"     → verse 2, all voices
+    refrain_only:   { voices: "all" }              # "(R) Praise"    → refrain, all voices
+    voices_only:    { verse: 1 }                   # "(SA) Amazing"  → verse 1, S+A
 
 
 # -----------------------------------------------------------------------------

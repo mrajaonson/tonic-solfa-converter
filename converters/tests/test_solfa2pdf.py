@@ -310,40 +310,87 @@ class TestParseLyricLine:
         self.voices = ["S", "A", "T", "B"]
 
     def test_plain_lyrics(self):
-        ll = self.p._parse_lyric_line("A-ma-zing grace", self.voices)
+        ll, prefixed = self.p._parse_lyric_line("A-ma-zing grace", self.voices)
         assert "A-" in ll.syllables
-        assert ll.verse == "1"
+        assert prefixed is False
+        assert ll.verse is None  # finalized (positionally) by the block
 
     def test_refrain_prefix(self):
-        ll = self.p._parse_lyric_line("R Hal-le-lu-jah", self.voices)
+        ll, prefixed = self.p._parse_lyric_line("(R) Hal-le-lu-jah", self.voices)
         assert ll.verse == "R"
+        assert prefixed is True
 
     def test_verse_number(self):
-        ll = self.p._parse_lyric_line("2 second verse", self.voices)
+        ll, prefixed = self.p._parse_lyric_line("(2) second verse", self.voices)
         assert ll.verse == "2"
 
     def test_voice_prefix(self):
-        ll = self.p._parse_lyric_line("SA words here", self.voices)
+        ll, prefixed = self.p._parse_lyric_line("(SA) words here", self.voices)
         assert ll.voices == ["S", "A"]
+        assert ll.verse is None and prefixed is True
 
     def test_verse_and_voice(self):
-        ll = self.p._parse_lyric_line("1SA words", self.voices)
+        ll, prefixed = self.p._parse_lyric_line("(1.SA) words", self.voices)
         assert ll.verse == "1"
         assert "S" in ll.voices and "A" in ll.voices
+
+    def test_concatenated_is_literal(self):
+        # No dot -> not a prefix; whole line is lyric text.
+        ll, prefixed = self.p._parse_lyric_line("1SA words", self.voices)
+        assert prefixed is False
+        assert ll.syllables[0] == "1SA"
+
+    def test_bare_R_word_not_refrain(self):
+        ll, prefixed = self.p._parse_lyric_line("Ry havana malala", self.voices)
+        assert prefixed is False
+        assert ll.syllables[0] == "Ry"
 
     def test_empty_returns_none(self):
         result = self.p._parse_lyric_line("", self.voices)
         assert result is None
 
     def test_rest_skip_in_lyrics(self):
-        ll = self.p._parse_lyric_line("word * next", self.voices)
+        ll, prefixed = self.p._parse_lyric_line("word * next", self.voices)
         assert "*" in ll.syllables
 
     def test_join_char_becomes_space(self):
         from converters.shared import spec
         join = spec["lyrics"]["join"]
-        ll = self.p._parse_lyric_line(f"two{join}words", self.voices)
+        ll, prefixed = self.p._parse_lyric_line(f"two{join}words", self.voices)
         assert "two words" in ll.syllables
+
+
+class TestBlockLyricVerses:
+    """Positional verse numbering is resolved at the block level."""
+
+    def test_two_unprefixed_lines_number_1_and_2(self):
+        block = _parser()._parse_single_block([
+            "S | d : r : m : f |",
+            "A | d : r : m : f |",
+            "first words here",
+            "second words here",
+        ])
+        assert [ll.verse for ll in block.lyric_lines] == ["1", "2"]
+        # multi-verse -> the number is shown
+        assert block.lyric_lines[0].display_prefix == "1"
+        assert block.lyric_lines[1].display_prefix == "2"
+
+    def test_single_unprefixed_line_has_no_number(self):
+        block = _parser()._parse_single_block([
+            "S | d : r : m : f |",
+            "only verse here",
+        ])
+        assert block.lyric_lines[0].verse == "1"
+        assert block.lyric_lines[0].display_prefix == ""
+
+    def test_voice_prefix_stays_verse_1(self):
+        block = _parser()._parse_single_block([
+            "S | d : r : m : f |",
+            "A | d : r : m : f |",
+            "(S) so words",
+            "(A) al words",
+        ])
+        assert [ll.verse for ll in block.lyric_lines] == ["1", "1"]
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -369,31 +416,6 @@ class TestParseSyllables:
     def test_multiple_words(self):
         s = self.p._parse_syllables("how sweet the sound")
         assert s == ["how", "sweet", "the", "sound"]
-
-
-# ──────────────────────────────────────────────────────────────────────
-# _parse_voice_labels
-# ──────────────────────────────────────────────────────────────────────
-
-class TestParseVoiceLabels:
-    def setup_method(self):
-        self.p = _parser()
-
-    def test_satb(self):
-        assert self.p._parse_voice_labels("SATB") == ["S", "A", "T", "B"]
-
-    def test_sa(self):
-        assert self.p._parse_voice_labels("SA") == ["S", "A"]
-
-    def test_numbered(self):
-        assert self.p._parse_voice_labels("S1S2") == ["S1", "S2"]
-
-    def test_invalid(self):
-        assert self.p._parse_voice_labels("XYZ") == []
-
-    def test_partial_invalid(self):
-        # Stops at non-voice char, doesn't consume whole string → invalid
-        assert self.p._parse_voice_labels("SX") == []
 
 
 # ──────────────────────────────────────────────────────────────────────

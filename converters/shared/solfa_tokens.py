@@ -131,3 +131,46 @@ def split_lyric_prefix(prefix: str) -> Tuple[str, str]:
             i += 1
         return prefix[:i], prefix[i:]
     return '', prefix
+
+
+def extract_parenthesized_prefix(line: str) -> Optional[Tuple[str, str]]:
+    """If *line* starts with a ``(...)`` token, return (content, rest) where
+    content is the text inside the parens and rest is the lyric text after ``)``.
+
+    Returns None when there is no leading parenthesized token. Lyric prefixes are
+    recognized ONLY in this parenthesized form; anything else is literal lyric text.
+    """
+    m = re.match(r'^\s*\(([^)]*)\)\s*(.*)$', line)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def parse_lyric_prefix(token: str, allowed_labels, allow_numbered: bool = True):
+    """Parse the CONTENT of a lyric prefix under the dot grammar.
+
+    Grammar (``.`` is ``spec["lyrics"]["verse_voice_separator"]``)::
+
+        PREFIX := verse | R | voices | (verse | R) '.' voices
+        verse  := [0-9]+
+        voices := (voice)+     voice := [SATB][0-9]?
+
+    Returns (verse, voices) or None:
+        verse  : None (no verse marker) | "R" | a digit string
+        voices : None (no voice marker -> all voices) | non-empty list of labels
+        None   : *token* is not a valid prefix.
+    """
+    sep = spec["lyrics"]["verse_voice_separator"]
+    if sep in token:
+        left, _, right = token.partition(sep)
+        if not right or sep in right:      # need exactly one separator, voices non-empty
+            return None
+        v, vrest = split_lyric_prefix(left)  # left must be a bare verse / R
+        if not v or vrest:
+            return None
+        labels = extract_voice_label_sequence(right, allowed_labels, allow_numbered)
+        return (v, labels) if labels else None
+
+    v, vrest = split_lyric_prefix(token)
+    if v:
+        return None if vrest else (v, None)  # bare verse/R; concatenated combo -> invalid
+    labels = extract_voice_label_sequence(token, allowed_labels, allow_numbered)
+    return (None, labels) if labels else None

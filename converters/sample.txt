@@ -7,20 +7,20 @@
 :meter: 8.7.8.7.D
 :comment:
 
-| m : m : f : s | s : f : m : r | d : d : r : m | m : –.r: r : – |
-| s, : s, : s, : s, | s, : l, : s, : s, | s, : s, : f, : m, | s, : –.s, : s, : – |
-| d : d : t, : d | d : d : d : t, | d : d : t, : d | d : –.t, : t, : – |
-| d, : d, : r, : m, | m, : f, : s, : f, | m, : m, : r, : d, | s, : –.s, : s, : – |
-1 Joy-ful, joy-ful, we a-do-reYou, God of glo-ry, Lord of love;
+| m  : m  : f  : s  | s  : f    : m  : r  | d  : d    : r      : m  | m  : –.r  : r  : – |
+| s, : s, : s, : s, | s, : l,   : s, : s, | s, : s,   : f,     : m, | s, : –.s, : s, : – |
+| d  : d  : t, : d  | d  : d    : d  : t, | d  : d    : t,     : d  | d  : –.t, : t, : – |
+| d, : d, : r, : m, | m, : f,   : s, : f, | m, : m,   : r,     : d, | s, : –.s, : s, : – |
+(1) Joy-ful, joy-ful, we a-do-reYou, God of glo-ry, Lord of love;
 
-| m : m : f : s | s : f : m : r | d : d : r : m | r : –.d : d : – |
-| s, : s, : s, : s, | l, : l, : t, : t, | l, : s, : f, : m, | s, : –.f, : m, : – |
-| d : d : t, : d | d : r : s : f | m : d : l,._t, : d | d : t, : d : – |
-| d, : d, : r, : m, | f, : f, : f, : f, | s, : s, : s, : s, | s, : s, : d, : – |
+| m  : m  : f  : s  | s  : f    : m  : r  | d  : d    : r      : m  | r  : –.d  : d  : – |
+| s, : s, : s, : s, | l, : l,   : t, : t, | l, : s,   : f,     : m, | s, : –.f, : m, : – |
+| d  : d  : t, : d  | d  : r    : s  : f  | m  : d    : l,._t, : d  | d  : t,   : d  : – |
+| d, : d, : r, : m, | f, : f,   : f, : f, | s, : s,   : s,     : s, | s, : s,   : d, : – |
 Hearts un-fold like flow 'rs be-fore You, Op'ning to the sun a-bove.
 
-| r : r : m : d | r : m._f : m : d | r : m._f : m : r | d : r : s, : - |
-| t, : t, : s, : d | d : t, : s, : s, | l, : s, : s, : s, | s, : fi, : s, : - |
-| t, : t, : d : s | s : r : d : d | d : t, : d : f | m : r : t, : - |
-| s, : s, : d : m, | s, : s, : d : m, | f, : s, : d : t, | l, : r, : s, : - |
+| r  : r  : m  : d  | r  : m._f : m  : d  | r  : m._f : m      : r  | d  : r    : s, : - |
+| t, : t, : s, : d  | d  : t,   : s, : s, | l, : s,   : s,     : s, | s, : fi,  : s, : - |
+| t, : t, : d  : s  | s  : r    : d  : d  | d  : t,   : d      : f  | m  : r    : t, : - |
+| s, : s, : d  : m, | s, : s,   : d  : m, | f, : s,   : d      : t, | l, : r,   : s, : - |
 Melt the clouds of sin and sad-ness; Drive the dark of doubt a-way;

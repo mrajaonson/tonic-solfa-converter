@@ -13,6 +13,14 @@ from .solfa_tokens import (
     voice_label_alternation,
     extract_voice_label_sequence,
     split_lyric_prefix,
+    extract_parenthesized_prefix,
+    parse_lyric_prefix,
+)
+from .solfa_timesig import (
+    is_note_line,
+    count_measure_beats,
+    find_beats_per_measure,
+    resolve_beats_per_measure,
 )
 
 __all__ = [
@@ -28,4 +36,10 @@ __all__ = [
     "voice_label_alternation",
     "extract_voice_label_sequence",
     "split_lyric_prefix",
+    "extract_parenthesized_prefix",
+    "parse_lyric_prefix",
+    "is_note_line",
+    "count_measure_beats",
+    "find_beats_per_measure",
+    "resolve_beats_per_measure",
 ]

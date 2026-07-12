@@ -9,8 +9,9 @@ from ..shared import (
     consume_octave_modifiers,
     is_navigation_marker,
     voice_label_alternation,
-    extract_voice_label_sequence,
-    split_lyric_prefix,
+    extract_parenthesized_prefix,
+    parse_lyric_prefix,
+    resolve_beats_per_measure,
 )
 
 
@@ -466,66 +467,44 @@ def parse_voice_line(line: str, beats_per_measure: int | None = None) -> tuple[s
 #  LYRICS PARSING
 # ──────────────────────────────────────────────────────────────────────
 
-def _extract_voice_labels(s: str) -> list[str]:
-    """Greedily extract concatenated voice labels from a string.
-    E.g. 'SATB' → ['S','A','T','B'], 'S1S2T' → ['S1','S2','T']"""
-    return extract_voice_label_sequence(s, spec["voices"]["voice_config"].keys())
-
-
-def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
+def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int | None, bool, list]:
     """
-    Parse a lyrics line into (voices, verse_id, syllables).
+    Parse a lyrics line into (voices, verse, prefixed, syllables).
 
     Returns:
-        voices: list of voice labels, or None for all voices
-        verse_id: int (verse number) or "R" (refrain)
+        voices:   list of voice labels, or None for all voices
+        verse:    int (verse number), "R" (refrain), or None (no explicit verse)
+        prefixed: True if the line carried a valid parenthesized prefix
         syllables: list of (text, syllabic) tuples
 
-    Prefix format:
-        (none)          → verse 1, all voices
-        R               → refrain, all voices
-        1               → verse 1, all voices
-        1SA             → verse 1, S and A
-        1S1S2           → verse 1, S1 S2
-        RSA             → refrain, S and A
-        RTB             → refrain, T and B
+    The caller resolves a None verse from the line's position among the block's
+    unprefixed lyric lines (see parse_file).
+
+    Prefix format (parenthesized only):
+        (none)     → all voices, positional verse
+        (R)        → refrain, all voices
+        (2)        → verse 2, all voices
+        (SA)       → verse 1, S and A
+        (1.SA)     → verse 1, S and A
+        (R.TB)     → refrain, T and B
     """
     stripped = line.strip()
     voices = None
-    verse_id: str | int = 1
+    verse: str | int | None = None
+    prefixed = False
 
-    # Try to match prefix before the first space
-    space_idx = stripped.find(" ")
-    if space_idx > 0:
-        prefix = stripped[:space_idx]
-        rest = stripped[space_idx + 1:].strip()
-        parsed = False
-
-        # Check for verse+voices (e.g. "1SA", "2B", "RS1S2") or verse/refrain only
-        vpart, vlist = split_lyric_prefix(prefix)
-
-        if vpart:
-            if vpart == "R":
-                verse_id = "R"
-            else:
-                verse_id = int(vpart)
-
-            if vlist:
-                labels = _extract_voice_labels(vlist)
-                if labels:
-                    voices = labels
-            stripped = rest
-            parsed = True
-
-        # Check for voice-only prefix (e.g. "S", "SA", "SAT", "S1S2")
-        if not parsed:
-            labels = _extract_voice_labels(prefix)
+    p = extract_parenthesized_prefix(stripped)
+    if p is not None:
+        content, rest = p
+        result = parse_lyric_prefix(content, spec["voices"]["base_labels"], allow_numbered=True)
+        if result is not None:
+            v, labels = result
+            verse = "R" if v == "R" else (int(v) if v else None)
             if labels:
                 voices = labels
-                stripped = rest
-                parsed = True
-
-        # If prefix wasn't recognized, treat entire line as lyrics (stripped unchanged)
+            stripped = rest.strip()
+            prefixed = True
+        # Invalid prefix content: treat the whole line as literal lyrics.
 
     # Split into syllables using MusicXML syllabic types for hyphen rendering
     # "A-ma-zing" → begin/middle/end, "ni-" (trailing) → begin only (no extra syllable)
@@ -552,7 +531,7 @@ def parse_lyrics_line(line: str) -> tuple[list[str] | None, str | int, list]:
                 # trailing hyphen (e.g. "ni-"): begin with no closing end
                 syllables.append((part, "begin"))
 
-    return voices, verse_id, syllables
+    return voices, verse, prefixed, syllables
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -649,9 +628,16 @@ def parse_file(filepath: str) -> dict:
     lines, notes_content = _extract_notes_section(lines)
     props, remaining = parse_header(lines)
 
-    # Beats per measure — needed to build rest-fill measures for absent voices.
+    # Beats per measure is counted from the music (a partial first measure or a
+    # measure split across systems is skipped); the counted value wins over the
+    # header numerator, which now only supplies the denominator. Rewriting the
+    # effective timesig keeps the builder/duration code consistent from one source.
+    # Count over the file-aligned ``lines`` (not ``remaining``, which drops header
+    # lines) so a mismatch warning can cite the real line number.
     time_sig = props.get("timesig", spec["defaults"]["timesig"])
-    beats_per_measure = int(time_sig.split("/")[0])
+    den = int(time_sig.split("/")[1])
+    beats_per_measure = resolve_beats_per_measure(lines, header_timesig=time_sig)
+    props["timesig"] = f"{beats_per_measure}/{den}"
 
     # ── Group remaining lines into blocks (separated by blank lines) ──
     raw_blocks: list[list[str]] = []
@@ -709,9 +695,19 @@ def parse_file(filepath: str) -> dict:
         total_measures_so_far += block_measure_count
 
         # ── Parse lyrics, targeting only this block's active voices ──
+        # Unprefixed lyric lines are numbered by position (verse 1, 2, ...) within
+        # the block; a voices-only prefix like (SA) is verse 1 and does not count.
         block_labels = list(block_voices.keys())
+        positional_verse = 0
         for lyric_line in lyric_lines:
-            voices_prefix, verse_id, syllables = parse_lyrics_line(lyric_line)
+            voices_prefix, verse, prefixed, syllables = parse_lyrics_line(lyric_line)
+            if verse is not None:
+                verse_id: str | int = verse
+            elif prefixed:
+                verse_id = 1
+            else:
+                positional_verse += 1
+                verse_id = positional_verse
             targets = voices_prefix if voices_prefix is not None else block_labels
 
             for target in targets:

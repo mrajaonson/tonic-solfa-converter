@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from ..shared import (
     spec,
     match_solfa_token,
@@ -8,8 +8,9 @@ from ..shared import (
     nav_number,
     navigation_display,
     voice_label_alternation,
-    extract_voice_label_sequence,
-    split_lyric_prefix,
+    extract_parenthesized_prefix,
+    parse_lyric_prefix,
+    resolve_beats_per_measure,
 )
 from .data_structures import (Song, VoiceLine, Measure, Note, NoteType, Block, LyricLine, Expression, Beat)
 
@@ -63,6 +64,17 @@ class TonicSolfaParser:
             # it's content and falls through to note parsing.
             if not self._parse_header_line(stripped):
                 content_lines.append(line)
+
+        # Beats per measure is counted from the music (a partial first measure or
+        # a measure split across systems is skipped); the counted value wins over
+        # the header numerator, which now only supplies the denominator.
+        # Count over the file-aligned ``lines`` (not ``content_lines``, which drops
+        # header/comment lines) so a mismatch warning can cite the real line number.
+        den = self.song.time_sig[1]
+        num = resolve_beats_per_measure(
+            lines, header_timesig=f"{self.song.time_sig[0]}/{den}"
+        )
+        self.song.time_sig = (num, den)
 
         # Parse content blocks
         self._parse_blocks(content_lines)
@@ -185,11 +197,31 @@ class TonicSolfaParser:
         if block.voice_lines:
             self._number_block_measures(block)
 
-        # Parse lyrics
+        # Parse lyrics. Unprefixed lines are numbered by position (verse 1, 2, ...)
+        # within the block; a voices-only prefix like (SA) is verse 1 and does not
+        # count. The verse number is shown only when the block has >=2 such verses.
+        parsed_lyrics = []
         for lyric_line in lyric_lines:
-            parsed_lyric = self._parse_lyric_line(lyric_line, voice_labels_used)
-            if parsed_lyric:
-                block.lyric_lines.append(parsed_lyric)
+            res = self._parse_lyric_line(lyric_line, voice_labels_used)
+            if res:
+                parsed_lyrics.append(res)
+
+        num_positional = sum(1 for _, prefixed in parsed_lyrics if not prefixed)
+        positional = 0
+        for lyric, prefixed in parsed_lyrics:
+            if lyric.verse is not None:          # explicit verse / refrain
+                verse_str = lyric.verse
+                label = verse_str
+            elif prefixed:                        # voices-only -> verse 1, no label
+                verse_str = "1"
+                label = ""
+            else:                                 # unprefixed -> positional verse
+                positional += 1
+                verse_str = str(positional)
+                label = verse_str if num_positional >= 2 else ""
+            lyric.verse = verse_str
+            lyric.display_prefix = label + lyric.display_prefix
+            block.lyric_lines.append(lyric)
 
         return block
 
@@ -585,54 +617,40 @@ class TonicSolfaParser:
                 return Expression(type="navigation", value=navigation_display(content))
         return None
 
-    def _parse_lyric_line(self, line: str, available_voices: List[str]) -> Optional[LyricLine]:
-        """Parse a lyrics line with optional prefix"""
+    def _parse_lyric_line(self, line: str, available_voices: List[str]) -> Optional[Tuple[LyricLine, bool]]:
+        """Parse a lyrics line with an optional parenthesized prefix.
+
+        Returns (lyric_line, prefixed) or None. ``lyric_line.verse`` holds the
+        explicit verse ("2"/"R") or None (voices-only or unprefixed);
+        ``display_prefix`` holds only the voice letters (when the voice set is
+        restricted). The caller (_parse_single_block) resolves the final verse
+        from the line's position and prepends the verse label.
+        """
         line = line.strip()
         if not line:
             return None
 
-        verse = "1"
         voices = list(available_voices) if available_voices else spec["voices"]["default_order"][:]
-        display_prefix = ""
+        voice_display = ""
+        verse: Optional[str] = None
+        prefixed = False
         text = line
 
-        # Try to match prefix before the first space
-        match = re.match(r'^(\S+)\s+(.*)$', line)
-        if match:
-            prefix = match.group(1)
-            rest = match.group(2)
-            parsed = False
-
-            # Check for verse+voices (e.g. "1SA", "2B", "RS1S2", "1S1S2")
-            v_part, voice_part = split_lyric_prefix(prefix)
-
-            if v_part:
-                verse = v_part
-                display_prefix = v_part
-
-                if voice_part:
-                    parsed_voices = self._parse_voice_labels(voice_part)
-                    if parsed_voices:
-                        voices = parsed_voices
-                        if set(parsed_voices) != set(spec["voices"]["default_order"][:len(available_voices)]):
-                            display_prefix += voice_part
-
-                text = rest
-                parsed = True
-
-            # Check for voice-only prefix (e.g. "S", "SA", "SAT", "S1S2")
-            if not parsed:
-                parsed_voices = self._parse_voice_labels(prefix)
-                if parsed_voices:
-                    voices = parsed_voices
-                    if set(parsed_voices) != set(spec["voices"]["default_order"][:len(available_voices)]):
-                        display_prefix = prefix
-                    text = rest
-                    parsed = True
-
-            # If prefix wasn't recognized, treat entire line as lyrics text
-            if not parsed:
-                text = line
+        p = extract_parenthesized_prefix(line)
+        if p is not None:
+            content, rest = p
+            result = parse_lyric_prefix(content, spec["voices"]["base_labels"], allow_numbered=True)
+            if result is not None:
+                v, labels = result
+                prefixed = True
+                verse = v  # digit string, "R", or None (voices-only)
+                if labels:
+                    voices = labels
+                    full = set(spec["voices"]["default_order"][:len(available_voices)])
+                    if set(labels) != full:
+                        voice_display = "".join(labels)
+                text = rest.strip()
+            # Invalid prefix content: treat the whole line as literal lyrics.
 
         # Parse syllables
         syllables = self._parse_syllables(text)
@@ -640,16 +658,13 @@ class TonicSolfaParser:
         if not syllables:
             return None
 
-        return LyricLine(
+        lyric = LyricLine(
             verse=verse,
             voices=voices,
             syllables=syllables,
-            display_prefix=display_prefix
+            display_prefix=voice_display,
         )
-
-    def _parse_voice_labels(self, voice_str: str) -> List[str]:
-        """Parse concatenated voice labels like 'SA', 'S1S2T' into a list"""
-        return extract_voice_label_sequence(voice_str, spec["voices"]["base_labels"], allow_numbered=True)
+        return lyric, prefixed
 
     def _parse_syllables(self, text: str) -> List[str]:
         """Parse lyrics text into syllables"""

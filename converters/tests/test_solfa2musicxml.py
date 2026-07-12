@@ -7,6 +7,7 @@ from converters.solfa2musicxml.solfa_parser import (
     parse_beat_tokens,
     parse_voice_line,
     parse_lyrics_line,
+    parse_file,
     _extract_voice_label,
     _split_measures,
     _detect_modulation,
@@ -308,41 +309,90 @@ def test_parse_voice_line_modulation_recorded():
 # ──────────────────────────────────────────────────────────────────────
 
 def test_parse_lyrics_line_single_word():
-    voices, verse_id, syllables = parse_lyrics_line("Amazing")
+    voices, verse, prefixed, syllables = parse_lyrics_line("Amazing")
     assert syllables[0] == ("Amazing", "single")
 
 
 def test_parse_lyrics_line_hyphenated():
-    voices, verse_id, syllables = parse_lyrics_line("A-ma-zing")
+    voices, verse, prefixed, syllables = parse_lyrics_line("A-ma-zing")
     assert syllables[0][1] == "begin"
     assert syllables[1][1] == "middle"
     assert syllables[2][1] == "end"
 
 
 def test_parse_lyrics_line_refrain_prefix():
-    voices, verse_id, syllables = parse_lyrics_line("R Hal-le-lu-jah")
-    assert verse_id == "R"
+    voices, verse, prefixed, syllables = parse_lyrics_line("(R) Hal-le-lu-jah")
+    assert verse == "R"
+    assert prefixed is True
 
 
 def test_parse_lyrics_line_verse_number():
-    voices, verse_id, syllables = parse_lyrics_line("2 second verse")
-    assert verse_id == 2
+    voices, verse, prefixed, syllables = parse_lyrics_line("(2) second verse")
+    assert verse == 2
+    assert prefixed is True
 
 
 def test_parse_lyrics_line_voice_prefix():
-    voices, verse_id, syllables = parse_lyrics_line("SA words here")
+    voices, verse, prefixed, syllables = parse_lyrics_line("(SA) words here")
     assert voices == ["S", "A"]
+    assert verse is None and prefixed is True
 
 
 def test_parse_lyrics_line_verse_and_voice():
-    voices, verse_id, syllables = parse_lyrics_line("1SA words")
-    assert verse_id == 1
+    voices, verse, prefixed, syllables = parse_lyrics_line("(1.SA) words")
+    assert verse == 1
     assert voices == ["S", "A"]
 
 
 def test_parse_lyrics_line_no_prefix_all_voices():
-    voices, verse_id, syllables = parse_lyrics_line("just words")
+    voices, verse, prefixed, syllables = parse_lyrics_line("just words")
     assert voices is None
+    assert verse is None and prefixed is False
+
+
+def test_parse_lyrics_line_concatenated_is_literal():
+    # Without the dot separator, "1SA" is NOT a prefix -> whole line is lyric.
+    voices, verse, prefixed, syllables = parse_lyrics_line("1SA words")
+    assert voices is None and verse is None and prefixed is False
+    assert syllables[0] == ("1SA", "single")
+
+
+def test_parse_lyrics_line_bare_R_word_not_refrain():
+    # A lyric line starting with an R-word must not be mistaken for a refrain.
+    voices, verse, prefixed, syllables = parse_lyrics_line("Ry havana malala")
+    assert prefixed is False and verse is None
+    assert syllables[0] == ("Ry", "single")
+
+
+def test_parse_file_positional_verses(tmp_path):
+    # Two unprefixed lyric lines in one block -> verses 1 and 2; (S)/(A) stay v1.
+    src = tmp_path / "song.txt"
+    src.write_text(
+        "S | d : r : m : f |\n"
+        "A | d : r : m : f |\n"
+        "first verse words here\n"
+        "second verse words here\n",
+        encoding="utf-8",
+    )
+    result = parse_file(str(src))
+    # 'first' -> verse 1, 'second' -> verse 2, applied to all block voices.
+    assert result["lyrics"]["S"][1][0] == ("first", "single")
+    assert result["lyrics"]["S"][2][0] == ("second", "single")
+
+
+def test_parse_file_voice_prefix_stays_verse_1(tmp_path):
+    src = tmp_path / "song.txt"
+    src.write_text(
+        "S | d : r : m : f |\n"
+        "A | d : r : m : f |\n"
+        "(S) so words\n"
+        "(A) al words\n",
+        encoding="utf-8",
+    )
+    result = parse_file(str(src))
+    assert result["lyrics"]["S"][1][0] == ("so", "single")
+    assert result["lyrics"]["A"][1][0] == ("al", "single")
+    assert 2 not in result["lyrics"]["S"] and 2 not in result["lyrics"]["A"]
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -15,15 +15,43 @@ Usage:
 import sys
 import re
 from pathlib import Path
-from ..shared import spec
+from ..shared import spec, is_note_line, resolve_beats_per_measure
 
 
 def _is_note_line(line: str) -> bool:
     """A note line contains a barline | and a beat separator :."""
-    return '|' in line and ':' in line
+    return is_note_line(line)
 
 
-def _align_block(note_lines: list[str]) -> list[str]:
+def _line_partials(cells: list[str], seps: list[str], bpm: int | None,
+                   has_voice_label: bool) -> tuple[bool, bool]:
+    """Classify a note line's edge measures as partial (leading, trailing).
+
+    A fragment before the first barline (a pickup) or after the last barline
+    (a truncated / split measure) with fewer than *bpm* beats is a partial. When
+    *bpm* is unknown, fall back to the positional rule (any trailing content past
+    the last barline is treated as a partial, no leading detection).
+    """
+    barline = spec["rhythm"]["barline"]
+    bars = [i for i, s in enumerate(seps) if s == barline]
+    if not bars:
+        return False, bool(cells and cells[-1])
+
+    first_bar, last_bar = bars[0], bars[-1]
+    leading = trailing = False
+
+    if any(cells[last_bar + 1:]):  # real content after the last barline
+        trailing = bpm is None or len(cells[last_bar + 1:]) < bpm
+
+    if not has_voice_label:
+        lead_cells = cells[:first_bar + 1]
+        if any(lead_cells) and bpm is not None and len(lead_cells) < bpm:
+            leading = True
+
+    return leading, trailing
+
+
+def _align_block(note_lines: list[str], bpm: int | None = None) -> list[str]:
     """Pad cells so separators align vertically across all lines.
 
     Lines with different lengths are supported as long as at each separator
@@ -34,6 +62,9 @@ def _align_block(note_lines: list[str]) -> list[str]:
     """
     if not note_lines:
         return []
+
+    if bpm is None:
+        bpm = resolve_beats_per_measure(note_lines, warn=False)
 
     cells_list = [[c.strip() for c in re.split(r'\s*[|:!]\s*', line)] for line in note_lines]
     seps_list  = [re.findall(r'[|:!]', line) for line in note_lines]
@@ -56,11 +87,14 @@ def _align_block(note_lines: list[str]) -> list[str]:
 
     aligned = []
     for cells, seps in zip(cells_list, seps_list):
-        # A line that ends on a partial measure has no closing barline: its last
-        # separator has real content after it (e.g. "... | s : l"), so that
-        # separator needs a trailing space like any mid-line one, not the tight
-        # spacing reserved for a true closing pipe.
-        closes_with_barline = not cells[-1]
+        # A partial edge measure has no barline on that edge, so its adjoining
+        # separator is a normal spaced one, not a tight opening/closing pipe:
+        #   - leading pickup  (e.g. "d | r : m | ...") -> opening sep gets a space
+        #   - trailing partial (e.g. "... | s : l")    -> closing sep gets a space
+        leading_partial, trailing_partial = _line_partials(
+            cells, seps, bpm, has_voice_label
+        )
+        closes_with_barline = not trailing_partial and not cells[-1]
 
         parts = []
         for i, cell in enumerate(cells):
@@ -69,7 +103,7 @@ def _align_block(note_lines: list[str]) -> list[str]:
                 c = seps[i]
                 is_first = (i == 0)
                 is_last  = (i == len(seps) - 1)
-                if is_first and not has_voice_label:
+                if is_first and not has_voice_label and not leading_partial:
                     parts.append(c + ' ')        # '| ' - opening pipe, no leading space
                 elif is_last and closes_with_barline:
                     parts.append(' ' + c)        # ' |' - closing pipe, no trailing space
@@ -127,8 +161,12 @@ def reformat(input_path: str, output_path: str = None):
             result.append(line)
 
     # Align all note lines globally - shorter lines (fewer measures) share
-    # column widths with longer lines for their common positions.
-    aligned = _align_block([line for _, line in note_positions])
+    # column widths with longer lines for their common positions. Beats per
+    # measure is counted once over all note lines so partial (pickup/trailing)
+    # measures are detected consistently across every block.
+    note_texts = [line for _, line in note_positions]
+    bpm = resolve_beats_per_measure(note_texts, warn=False)
+    aligned = _align_block(note_texts, bpm=bpm)
     for (idx, _), aligned_line in zip(note_positions, aligned):
         result[idx] = aligned_line
 
